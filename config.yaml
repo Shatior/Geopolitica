@@ -1,0 +1,72 @@
+# Configuración del scraper de politicaexterior.com
+base_url: "https://www.politicaexterior.com"
+
+# Ritmo de peticiones. Una sola conexión, secuencial, con pausas aleatorias
+# entre peticiones y una pausa larga periódica. Con estos valores el scraping
+# completo tarda horas, pero es indistinguible de una lectura humana intensa
+# y no dispara los límites del servidor.
+throttle:
+  min_delay: 4.0          # segundos mínimos entre peticiones
+  max_delay: 9.0          # segundos máximos entre peticiones
+  long_pause_every: 25    # cada N peticiones...
+  long_pause_min: 60      # ...pausa larga de entre estos segundos
+  long_pause_max: 150
+
+# Publicaciones a scrapear. El archivo por años es /archivo/<archive_slug>-ano-<YYYY>/
+publications:
+  informe-semanal:
+    name: "Informe Semanal de Política Exterior"
+    first_year: 1995
+    archive_slug: "informe-semanal"
+    category_slug: "informe-semanal"   # /categoria-articulo/<slug>/page/N/
+    issue_url_hints:
+      - "/revista-informe/"
+  politica-exterior:
+    name: "Política Exterior (revista bimestral)"
+    first_year: 1987
+    archive_slug: "politica-exterior"
+    category_slug: "politica-exterior"
+    issue_url_hints:
+      - "/revista-politica-exterior/"
+      - "/revista/"
+  # Otras publicaciones del grupo, descomenta si tu suscripción las incluye:
+  # economia-exterior:
+  #   name: "Economía Exterior"
+  #   first_year: 1997
+  #   archive_slug: "economia-exterior"
+  #   category_slug: "economia-exterior"
+  #   issue_url_hints: ["/revista-economia/", "/revista/"]
+  # afkar-ideas:
+  #   name: "Afkar/Ideas"
+  #   first_year: 2003
+  #   archive_slug: "afkar-ideas"
+  #   category_slug: "afkar-ideas"
+  #   issue_url_hints: ["/revista-afkar/", "/revista/"]
+
+# Rutas que se consideran artículos individuales (regex sobre el path).
+article_url_patterns:
+  - "^/articulo/"
+  - "^/articulos/"
+
+# Prefijos de ruta que NUNCA son artículos (navegación, tienda, cuenta...).
+exclude_path_prefixes:
+  - "/archivo"
+  - "/categoria"
+  - "/autores"
+  - "/revista"
+  - "/ultimo"
+  - "/suscr"
+  - "/tienda"
+  - "/carrito"
+  - "/mi-cuenta"
+  - "/wp-"
+  - "/quienes-somos"
+  - "/preguntas-frecuentes"
+  - "/aviso-legal"
+  - "/politica-de-privacidad"
+  - "/politica-de-cookies"
+  - "/contacto"
+  - "/tag"
+  - "/etiqueta"
+  - "/hemeroteca"
+  - "/newsletter"

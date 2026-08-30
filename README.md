@@ -1,0 +1,126 @@
+# Geopolítica — análisis de tendencias sobre Política Exterior
+
+Pipeline para descargar (con tu suscripción de pago) los **Informes Semanales**
+(desde 1995) y la **revista bimestral Política Exterior** (desde 1987) de
+[politicaexterior.com](https://www.politicaexterior.com), y almacenarlos en una
+base de datos **PostgreSQL en Railway** preparada para análisis de tendencias.
+
+> Uso personal: el contenido es de pago y accedes con tu propia suscripción.
+> No republiques los textos ni subas `data/` al repositorio (ya está en
+> `.gitignore`).
+
+## Arquitectura
+
+```
+politicaexterior.com ──> scraper/ ──> data/raw/*.html      (HTML crudo, backup)
+     (tu sesión)                      data/parsed/*.jsonl  (registros extraídos)
+                                            │
+                                            ▼
+                                      db/load.py ──> PostgreSQL (Railway)
+```
+
+- **Scraper educado**: secuencial, 4–9 s aleatorios entre peticiones, pausa
+  larga cada ~25 peticiones, backoff ante 429/403/503 y aborto si el bloqueo
+  persiste. Reanudable: si se corta, continúa donde lo dejó.
+- **HTML crudo guardado**: si mañana quieres extraer otro campo, re-parseas en
+  local sin volver a scrapear.
+- **PostgreSQL** (y no Mongo/SQLite) porque el dominio es relacional
+  (publicación → número → artículo), Railway lo ofrece gestionado con un clic,
+  y trae búsqueda de texto completo en español (`tsvector`) que es justo lo
+  que necesita un análisis de tendencias. Más adelante puedes añadir
+  `pgvector` para embeddings sin cambiar de base de datos.
+
+## Puesta en marcha (en tu máquina)
+
+```bash
+git clone <este repo> && cd Geopolitica
+python -m venv .venv && source .venv/bin/activate   # en Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env
+```
+
+### 1. Autenticación (tu suscripción)
+
+**Vía recomendada — cookies del navegador**: inicia sesión en
+politicaexterior.com en Chrome/Firefox, exporta las cookies del dominio con una
+extensión como *Get cookies.txt LOCALLY* (formato Netscape) y guárdalas en
+`data/cookies.txt`. En `.env` ya apunta ahí `PE_COOKIES_FILE`.
+
+**Vía alternativa**: pon `PE_USERNAME` y `PE_PASSWORD` en `.env` (login
+estándar de WordPress). Si el sitio usa un formulario de login propio, esta vía
+puede fallar; usa entonces las cookies.
+
+Las cookies de WordPress caducan: si el scraper avisa de "artículos truncados",
+vuelve a exportarlas y relanza (no repite lo ya descargado).
+
+### 2. Probar con una página antes de lanzar nada
+
+```bash
+python -m scraper.inspect_page https://www.politicaexterior.com/archivo/informe-semanal-ano-2023/
+```
+
+Muestra qué detecta el parser (enlaces a números, artículos, cuerpo, si la
+sesión está autenticada) y guarda el HTML en `data/debug/`. Si algún selector
+no cuadra con el tema actual del sitio, se ajusta en `config.yaml`
+(`article_url_patterns`, `issue_url_hints`) o en `scraper/parse.py`
+(`BODY_SELECTORS`).
+
+### 3. Scraping
+
+```bash
+# Ensayo pequeño: 1 año, 5 artículos
+python -m scraper.run --publication informe-semanal --years 2023 --limit 5
+
+# Todo el Informe Semanal (1995-hoy)
+python -m scraper.run --publication informe-semanal
+
+# Todo: semanal + revista bimestral (tardará horas; puedes cortar y reanudar)
+python -m scraper.run
+```
+
+El progreso queda en `data/state.json`; relanzar nunca repite peticiones. Si el
+servidor devolviera bloqueos persistentes, el scraper se detiene solo: espera
+unas horas y reanuda.
+
+Descubrimiento alternativo de artículos (por si el archivo anual cambia):
+`--discover category` pagina `/categoria-articulo/<publicación>/page/N/`.
+
+### 4. Base de datos en Railway
+
+1. En [railway.app](https://railway.app): **New → Deploy PostgreSQL**.
+2. En la pestaña *Variables* del Postgres, copia `DATABASE_PUBLIC_URL` y pégala
+   como `DATABASE_URL` en tu `.env` local.
+3. Carga (aplica el esquema y hace upsert, idempotente):
+
+```bash
+python -m db.load
+```
+
+Repite `scraper.run` + `db.load` cuando quieras incorporar los números nuevos
+de cada semana (solo descargará lo que falte).
+
+## Esquema y consultas de tendencias
+
+Tablas: `publications` → `issues` → `articles` (con `authors[]`, `tags[]`,
+`published_date`, `body` y columna `tsv` de búsqueda en español). Ejemplos en
+`db/schema.sql`; el clásico:
+
+```sql
+-- Evolución trimestral de menciones a un tema
+SELECT date_trunc('quarter', published_date) AS trimestre, count(*)
+FROM articles
+WHERE tsv @@ websearch_to_tsquery('spanish', 'Sahel')
+GROUP BY 1 ORDER BY 1;
+```
+
+## Estructura del repo
+
+```
+config.yaml            publicaciones, ritmo de scraping, patrones de URL
+scraper/session.py     sesión HTTP educada (auth, throttling, backoff)
+scraper/parse.py       extracción (JSON-LD, OpenGraph, selectores WP)
+scraper/run.py         orquestador CLI reanudable
+scraper/inspect_page.py  depuración de una página concreta
+db/schema.sql          esquema PostgreSQL (FTS en español + índices)
+db/load.py             carga idempotente de los JSONL a Railway
+```

@@ -1,0 +1,16 @@
+# Entorno
+.env
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# Credenciales / sesión
+data/cookies.txt
+cookies.txt
+
+# Datos scrapeados (contenido de pago: no subir al repo)
+data/raw/
+data/parsed/
+data/debug/
+data/state.json
