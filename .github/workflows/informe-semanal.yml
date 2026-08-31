@@ -1,0 +1,65 @@
+# Actualización semanal: scrapea lo nuevo de politicaexterior.com y lo carga
+# en la base de datos de Railway.
+#
+# Secretos necesarios (Settings → Secrets and variables → Actions):
+#   PE_COOKIES    contenido completo del cookies.txt exportado del navegador
+#   DATABASE_URL  la DATABASE_PUBLIC_URL del Postgres en Railway
+#
+# El Informe Semanal se publica los lunes; corremos el martes de madrugada
+# para darle margen. Se puede lanzar a mano desde la pestaña Actions
+# ("Run workflow") para probar.
+
+name: informe-semanal
+
+on:
+  schedule:
+    - cron: "40 5 * * 2"   # martes 05:40 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Escribir cookies de sesión
+        env:
+          PE_COOKIES: ${{ secrets.PE_COOKIES }}
+        run: |
+          mkdir -p data
+          printf '%s\n' "$PE_COOKIES" > data/cookies.txt
+          test -s data/cookies.txt || { echo "El secreto PE_COOKIES está vacío"; exit 1; }
+
+      - name: Scrapear novedades (año en curso y anterior)
+        env:
+          PE_COOKIES_FILE: data/cookies.txt
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          Y=$(date -u +%Y)
+          python -m scraper.run \
+            --publication informe-semanal \
+            --publication politica-exterior \
+            --years "$((Y - 1))-$Y" \
+            --skip-from-db
+
+      - name: Cargar a Railway
+        if: always()   # carga lo descargado aunque el scraping fallara a medias
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: python -m db.load

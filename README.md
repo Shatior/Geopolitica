@@ -99,6 +99,30 @@ python -m db.load
 Repite `scraper.run` + `db.load` cuando quieras incorporar los números nuevos
 de cada semana (solo descargará lo que falte).
 
+## Actualización semanal automática (GitHub Actions)
+
+El backfill histórico se hace una vez desde tu PC; el mantenimiento lo hace
+GitHub Actions: cada martes de madrugada `.github/workflows/informe-semanal.yml`
+scrapea las novedades del año en curso (y el anterior, por el cambio de año) y
+las carga en Railway. Gracias a `--skip-from-db` el runner no necesita estado
+local: consulta a la base de datos qué URLs existen ya y solo baja lo nuevo
+(~6 peticiones por semana).
+
+Configuración (una vez): en GitHub, **Settings → Secrets and variables →
+Actions → New repository secret**, crea:
+
+- `PE_COOKIES`: pega el contenido completo de tu `data/cookies.txt`.
+- `DATABASE_URL`: la `DATABASE_PUBLIC_URL` del Postgres en Railway.
+
+Para probarlo sin esperar al martes: pestaña **Actions → informe-semanal →
+Run workflow**.
+
+Mantenimiento: la cookie de sesión caduca cada ~2 semanas. Si el job falla
+con aviso de artículos truncados, reexporta las cookies del navegador y
+actualiza el secreto `PE_COOKIES` (30 segundos). Alternativa 100% desatendida:
+si el login automático funciona (prueba local con `PE_USERNAME`/`PE_PASSWORD`
+en `.env`), usa esos dos secretos en lugar de la cookie y ajusta el workflow.
+
 ## Esquema y consultas de tendencias
 
 Tablas: `publications` → `issues` → `articles` (con `authors[]`, `tags[]`,

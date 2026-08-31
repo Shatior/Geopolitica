@@ -58,6 +58,30 @@ def append_jsonl(filename: str, record: dict) -> None:
         fh.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+def fetch_done_from_db(database_url: str) -> tuple[set[str], set[str]]:
+    """URLs ya cargadas en la base de datos, para ejecuciones sin estado
+    local (GitHub Actions). Un número se considera hecho si ya tiene al
+    menos 3 artículos cargados (los informes traen ~5; el umbral evita dar
+    por completo un número a medio scrapear)."""
+    import psycopg
+
+    articles: set[str] = set()
+    issues: set[str] = set()
+    try:
+        with psycopg.connect(database_url) as conn, conn.cursor() as cur:
+            cur.execute("SELECT url FROM articles")
+            articles = {r[0] for r in cur.fetchall()}
+            cur.execute(
+                """SELECT i.url FROM issues i
+                   WHERE (SELECT count(*) FROM articles a
+                          WHERE a.issue_id = i.id) >= 3"""
+            )
+            issues = {r[0] for r in cur.fetchall()}
+    except psycopg.errors.UndefinedTable:
+        pass  # base de datos aún vacía
+    return articles, issues
+
+
 # ------------------------------------------------------------------ fases
 def discover_issues(cfg, sess, pub, years) -> list[str]:
     """Recorre los archivos anuales y devuelve las URLs de números."""
@@ -140,6 +164,9 @@ def run(argv=None) -> int:
                     default="archive",
                     help="archive: años→números→artículos (con relación número-artículo); "
                          "category: pagina la categoría de artículos directamente")
+    ap.add_argument("--skip-from-db", action="store_true",
+                    help="consulta DATABASE_URL y omite números/artículos ya "
+                         "cargados (para ejecuciones sin estado local, p. ej. CI)")
     args = ap.parse_args(argv)
 
     logging.basicConfig(
@@ -156,6 +183,18 @@ def run(argv=None) -> int:
         if slug not in cfg.publications:
             log.error("Publicación desconocida: %s (mira config.yaml)", slug)
             return 2
+
+    db_articles: set[str] = set()
+    db_issues: set[str] = set()
+    if args.skip_from_db:
+        if not cfg.database_url:
+            log.error("--skip-from-db requiere DATABASE_URL en el entorno o .env")
+            return 2
+        db_articles, db_issues = fetch_done_from_db(cfg.database_url)
+        log.info(
+            "BD: %d artículos y %d números ya cargados, se omitirán",
+            len(db_articles), len(db_issues),
+        )
 
     sess = PoliteSession(cfg.base_url, cfg.throttle)
     if cfg.cookies_file:
@@ -187,6 +226,8 @@ def run(argv=None) -> int:
             else:
                 targets = []
                 for issue_url in discover_issues(cfg, sess, pub, years):
+                    if issue_url in db_issues:
+                        continue
                     if issue_url in state["issues"]:
                         cached = state["issues"][issue_url]
                         arts = cached["articles"]
@@ -219,7 +260,7 @@ def run(argv=None) -> int:
                     targets.extend((u, issue_url, issue_date) for u in arts)
 
             for url, issue_url, issue_date in targets:
-                if url in state["done"]:
+                if url in state["done"] or url in db_articles:
                     continue
                 full = scrape_article(
                     cfg, sess, state, url, slug, issue_url, issue_date
