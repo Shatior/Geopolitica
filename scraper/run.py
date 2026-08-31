@@ -75,7 +75,11 @@ def discover_issues(cfg, sess, pub, years) -> list[str]:
             )
             log.info("%s %s: %d números en %s", pub.slug, year, len(found), url)
             issue_urls.extend(u for u in found if u not in issue_urls)
-            url = parse.find_next_page(resp.text, cfg.base_url)
+            # Solo seguimos la paginación si sigue dentro del archivo; el tema
+            # de WordPress a veces enlaza como "siguiente" archivos por fecha
+            # genéricos (/2023/page/2/) que no son nuestros.
+            next_url = parse.find_next_page(resp.text, cfg.base_url)
+            url = next_url if next_url and "/archivo/" in next_url else None
     return issue_urls
 
 
