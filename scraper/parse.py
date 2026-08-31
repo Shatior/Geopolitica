@@ -35,6 +35,26 @@ PAYWALL_MARKERS = [
 MIN_FULL_BODY = 1200
 
 
+MESES = {
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+    "julio": 7, "agosto": 8, "septiembre": 9, "octubre": 10,
+    "noviembre": 11, "diciembre": 12,
+}
+_RE_FECHA_ES = re.compile(
+    r"(\d{1,2})\s+de\s+(" + "|".join(MESES) + r")\s+de\s+(\d{4})", re.IGNORECASE
+)
+
+
+def spanish_date(text: str | None) -> str | None:
+    """'25 de diciembre de 2023' -> '2023-12-25'."""
+    if not text:
+        return None
+    m = _RE_FECHA_ES.search(text)
+    if not m:
+        return None
+    return f"{int(m.group(3)):04d}-{MESES[m.group(2).lower()]:02d}-{int(m.group(1)):02d}"
+
+
 def soup_of(html: str) -> BeautifulSoup:
     return BeautifulSoup(html, "lxml")
 
@@ -47,6 +67,8 @@ def _same_site_links(soup: BeautifulSoup, base_url: str) -> list[str]:
         p = urlparse(url)
         if p.netloc != host:
             continue
+        # El tema del sitio genera a veces hrefs con doble barra (//ultimo/...)
+        url = p._replace(path=re.sub(r"/{2,}", "/", p.path)).geturl()
         if url not in seen:
             seen.append(url)
     return seen
@@ -106,6 +128,9 @@ def find_next_page(html: str, base_url: str) -> str | None:
 # ---------------------------------------------------------------- artículos
 
 def _json_ld(soup: BeautifulSoup) -> dict:
+    """Nodo JSON-LD más informativo. Yoast (el SEO del sitio) suele publicar
+    un @graph cuyo nodo con datePublished es de tipo WebPage, no Article."""
+    fallback: dict = {}
     for script in soup.find_all("script", type="application/ld+json"):
         try:
             data = json.loads(script.string or "")
@@ -117,11 +142,13 @@ def _json_ld(soup: BeautifulSoup) -> dict:
                 candidates.extend(
                     g for g in item["@graph"] if isinstance(g, dict)
                 )
-            if isinstance(item, dict) and item.get("@type") in (
-                "Article", "NewsArticle", "BlogPosting",
-            ):
+            if not isinstance(item, dict):
+                continue
+            if item.get("@type") in ("Article", "NewsArticle", "BlogPosting"):
                 return item
-    return {}
+            if not fallback and item.get("datePublished"):
+                fallback = item
+    return fallback
 
 
 def _meta(soup: BeautifulSoup, prop: str) -> str | None:
@@ -164,6 +191,7 @@ def parse_article(html: str, url: str) -> dict:
         or (soup.h1.get_text(strip=True) if soup.h1 else None)
         or (soup.title.get_text(strip=True) if soup.title else url)
     )
+    title = re.sub(r"\s*\|\s*Política Exterior\s*$", "", title)
 
     authors: list[str] = []
     ld_author = ld.get("author")
@@ -185,6 +213,11 @@ def parse_article(html: str, url: str) -> dict:
         or _meta(soup, "article:published_time")
         or (soup.find("time", datetime=True) or {}).get("datetime")
     )
+    if not published:
+        node = soup.select_one(
+            ".ctaSubscriptionsTitle, [class*='date'], [class*='fecha']"
+        )
+        published = spanish_date(node.get_text(" ", strip=True) if node else None)
 
     tags = [
         m["content"]
@@ -217,17 +250,32 @@ def parse_article(html: str, url: str) -> dict:
 def parse_issue(html: str, url: str) -> dict:
     soup = soup_of(html)
     m = re.search(r"-(\d+)/?$", urlparse(url).path)
-    title = (
-        _meta(soup, "og:title")
-        or (soup.h1.get_text(strip=True) if soup.h1 else None)
-        or url
+    number = int(m.group(1)) if m else None
+
+    # El sitio pone varios h1.title_cat y el primero puede estar vacío
+    title = next(
+        (t for h in soup.find_all("h1") if (t := h.get_text(strip=True))), None
     )
-    published = _meta(soup, "article:published_time") or (
-        (soup.find("time", datetime=True) or {}).get("datetime")
-    )
+    if title and number:
+        title = f"{title} {number}"
+
+    # La fecha del número está en el bloque de suscripción/portada
+    node = soup.select_one(".ctaSubscriptionsTitle")
+    published = spanish_date(node.get_text(" ", strip=True) if node else None)
+    if not published:
+        published = (
+            _meta(soup, "article:published_time")
+            or (soup.find("time", datetime=True) or {}).get("datetime")
+            or ""
+        )[:10] or None
+
+    pdf = soup.select_one("a[href*='download.php']")
+    pdf_url = urljoin(url, pdf["href"]) if pdf and pdf.get("href") else None
+
     return {
         "url": url,
-        "number": int(m.group(1)) if m else None,
-        "title": title,
-        "published_date": (published or "")[:10] or None,
+        "number": number,
+        "title": title or url,
+        "published_date": published,
+        "pdf_url": pdf_url,
     }

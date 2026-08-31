@@ -101,7 +101,8 @@ def discover_articles_via_category(cfg, sess, pub, max_pages=200) -> list[str]:
     return article_urls
 
 
-def scrape_article(cfg, sess, state, url, pub_slug, issue_url=None) -> bool:
+def scrape_article(cfg, sess, state, url, pub_slug, issue_url=None,
+                   issue_date=None) -> bool:
     resp = sess.get(url)
     if resp.status_code == 404:
         state["done"][url] = {"status": "404"}
@@ -110,6 +111,8 @@ def scrape_article(cfg, sess, state, url, pub_slug, issue_url=None) -> bool:
     record = parse.parse_article(resp.text, url)
     record["publication"] = pub_slug
     record["issue_url"] = issue_url
+    if not record["published_date"] and issue_date:
+        record["published_date"] = issue_date
     record["raw_html_path"] = save_raw(url, resp.text)
     record["scraped_at"] = datetime.now(timezone.utc).isoformat()
     append_jsonl("articles.jsonl", record)
@@ -174,14 +177,16 @@ def run(argv=None) -> int:
 
             if args.discover == "category":
                 targets = [
-                    (u, None)
+                    (u, None, None)
                     for u in discover_articles_via_category(cfg, sess, pub)
                 ]
             else:
                 targets = []
                 for issue_url in discover_issues(cfg, sess, pub, years):
                     if issue_url in state["issues"]:
-                        arts = state["issues"][issue_url]["articles"]
+                        cached = state["issues"][issue_url]
+                        arts = cached["articles"]
+                        issue_date = cached.get("published_date")
                     else:
                         resp = sess.get(issue_url)
                         if resp.status_code == 404:
@@ -194,8 +199,11 @@ def run(argv=None) -> int:
                             cfg.exclude_path_prefixes,
                         )
                         issue_rec["article_urls"] = arts
+                        issue_date = issue_rec["published_date"]
                         append_jsonl("issues.jsonl", issue_rec)
-                        state["issues"][issue_url] = {"articles": arts}
+                        state["issues"][issue_url] = {
+                            "articles": arts, "published_date": issue_date,
+                        }
                         save_state(state)
                         if not arts:
                             log.warning(
@@ -204,12 +212,14 @@ def run(argv=None) -> int:
                                 "con: python -m scraper.inspect_page %s",
                                 issue_url, issue_url,
                             )
-                    targets.extend((u, issue_url) for u in arts)
+                    targets.extend((u, issue_url, issue_date) for u in arts)
 
-            for url, issue_url in targets:
+            for url, issue_url, issue_date in targets:
                 if url in state["done"]:
                     continue
-                full = scrape_article(cfg, sess, state, url, slug, issue_url)
+                full = scrape_article(
+                    cfg, sess, state, url, slug, issue_url, issue_date
+                )
                 n_new += 1
                 paywalled_streak = 0 if full else paywalled_streak + 1
                 if n_new % 10 == 0:

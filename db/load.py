@@ -66,16 +66,17 @@ def main() -> int:
                 if rec["publication"] not in pub_ids:
                     continue
                 cur.execute(
-                    """INSERT INTO issues (publication_id, url, number, title, published_date)
-                       VALUES (%s, %s, %s, %s, %s)
+                    """INSERT INTO issues (publication_id, url, number, title, published_date, pdf_url)
+                       VALUES (%s, %s, %s, %s, %s, %s)
                        ON CONFLICT (url) DO UPDATE SET
                            number = EXCLUDED.number,
                            title = EXCLUDED.title,
-                           published_date = COALESCE(EXCLUDED.published_date, issues.published_date)
+                           published_date = COALESCE(EXCLUDED.published_date, issues.published_date),
+                           pdf_url = COALESCE(EXCLUDED.pdf_url, issues.pdf_url)
                        RETURNING id""",
                     (
                         pub_ids[rec["publication"]], rec["url"], rec.get("number"),
-                        rec.get("title"), rec.get("published_date"),
+                        rec.get("title"), rec.get("published_date"), rec.get("pdf_url"),
                     ),
                 )
                 issue_ids[rec["url"]] = cur.fetchone()["id"]

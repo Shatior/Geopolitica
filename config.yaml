@@ -46,6 +46,7 @@ publications:
 # Rutas que se consideran artículos individuales (regex sobre el path).
 article_url_patterns:
   - "^/articulo/"
+  - "^/articulo-completo/"
   - "^/articulos/"
 
 # Prefijos de ruta que NUNCA son artículos (navegación, tienda, cuenta...).

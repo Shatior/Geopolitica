@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS issues (
     url             TEXT UNIQUE NOT NULL,
     number          INT,
     title           TEXT,
-    published_date  DATE
+    published_date  DATE,
+    pdf_url         TEXT
 );
 
 CREATE TABLE IF NOT EXISTS articles (
