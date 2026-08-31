@@ -82,6 +82,21 @@ def fetch_done_from_db(database_url: str) -> tuple[set[str], set[str]]:
     return articles, issues
 
 
+def session_still_valid(sess, state) -> bool | None:
+    """Ante una racha de artículos truncados, distingue 'la sesión ha
+    caducado' de 'estos artículos son cortos o solo-PDF de verdad':
+    re-descarga un artículo que ya salió completo y comprueba que lo sigue
+    estando. Devuelve None si no hay ningún artículo conocido con que probar."""
+    good = [u for u, v in state["done"].items() if v.get("status") == "ok"]
+    if not good:
+        return None
+    canary = good[-1]
+    resp = sess.get(canary)
+    if resp.status_code != 200:
+        return False
+    return parse.parse_article(resp.text, canary)["is_full"]
+
+
 # ------------------------------------------------------------------ fases
 def discover_issues(cfg, sess, pub, years) -> list[str]:
     """Recorre los archivos anuales y devuelve las URLs de números."""
@@ -209,6 +224,7 @@ def run(argv=None) -> int:
 
     n_new = 0
     paywalled_streak = 0
+    verified_at = -10**9  # nº de petición de la última verificación de sesión
     try:
         for slug in pubs:
             pub = cfg.publications[slug]
@@ -270,11 +286,32 @@ def run(argv=None) -> int:
                 if n_new % 10 == 0:
                     save_state(state)
                 if paywalled_streak >= 5:
+                    # Los números antiguos (p. ej. 2009-2012) pueden ser
+                    # legítimamente cortos o solo-PDF; antes de abortar,
+                    # comprobamos si la sesión sigue viva. Para no duplicar
+                    # tráfico en esas épocas, la verificación se cachea.
+                    if sess._n_requests - verified_at < 300:
+                        paywalled_streak = 0
+                        continue
+                    log.warning(
+                        "%d artículos seguidos truncados; verificando la "
+                        "sesión con un artículo ya conocido…", paywalled_streak,
+                    )
+                    valid = session_still_valid(sess, state)
+                    if valid:
+                        log.warning(
+                            "La sesión sigue siendo válida: estos artículos "
+                            "son cortos o solo-PDF de verdad. Continúo, "
+                            "quedan marcados como incompletos (is_full=false)."
+                        )
+                        verified_at = sess._n_requests
+                        paywalled_streak = 0
+                        continue
                     log.error(
-                        "5 artículos seguidos truncados: la sesión no está "
-                        "autenticada o ha caducado. Renueva las cookies "
-                        "(data/cookies.txt) y vuelve a lanzar; lo ya "
-                        "descargado no se repite."
+                        "La sesión no está autenticada o ha caducado%s. "
+                        "Renueva las cookies (data/cookies.txt) y vuelve a "
+                        "lanzar; lo ya descargado no se repite.",
+                        "" if valid is False else " (sin artículo de control)",
                     )
                     return 3
                 if args.limit and n_new >= args.limit:
