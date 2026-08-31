@@ -123,6 +123,34 @@ actualiza el secreto `PE_COOKIES` (30 segundos). Alternativa 100% desatendida:
 si el login automático funciona (prueba local con `PE_USERNAME`/`PE_PASSWORD`
 en `.env`), usa esos dos secretos en lugar de la cookie y ajusta el workflow.
 
+## Frontend: hemeroteca web (`web/`)
+
+Interfaz para consultar lo que hay en la base de datos: listado con
+buscador de texto completo en español (con resaltado), filtros por
+publicación y año, y página de artículo con el texto íntegro y enlaces al
+original y al PDF del número.
+
+**En local:**
+
+```bash
+uvicorn web.app:app --reload
+# http://127.0.0.1:8000
+```
+
+**Desplegada en Railway** (junto a la base de datos):
+
+1. En el mismo proyecto de Railway: **New → GitHub Repo** y elige este repo
+   (Railway detecta el `Procfile` y arranca `uvicorn` solo).
+2. En *Variables* del nuevo servicio añade:
+   - `DATABASE_URL` → referencia a la variable del Postgres: pulsa
+     *Variable Reference* y elige `Postgres.DATABASE_URL` (la interna, sin
+     coste de egress).
+   - `WEB_USER` y `WEB_PASSWORD` → credenciales de acceso a la web.
+3. En *Settings → Networking → Generate Domain* para obtener la URL pública.
+
+⚠️ El contenido es de pago: no despliegues sin `WEB_PASSWORD` definida (sin
+ella la app no pide contraseña) y no compartas el dominio.
+
 ## Esquema y consultas de tendencias
 
 Tablas: `publications` → `issues` → `articles` (con `authors[]`, `tags[]`,
