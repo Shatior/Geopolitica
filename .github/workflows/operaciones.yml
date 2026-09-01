@@ -120,48 +120,48 @@ jobs:
 
           case "$OPERACION" in
             diagnostico)
-              python -m db.diag | tee informe.txt
+              python -m db.diag 2>&1 | tee informe.txt
               ;;
             inventario)
-              python -m db.inventario | tee informe.txt
+              python -m db.inventario 2>&1 | tee informe.txt
               ;;
             lentes)
-              python -m agentes.run $PUB_ARG_LENTE | tee informe.txt
+              python -m agentes.run $PUB_ARG_LENTE 2>&1 | tee informe.txt
               ;;
             enriquecer-*)
               python -m enriquecer.run "${OPERACION#enriquecer-}" \
-                $PUB_ARG_LENTE --limite "${LIMITE:-0}" | tee informe.txt
+                $PUB_ARG_LENTE --limite "${LIMITE:-0}" 2>&1 | tee informe.txt
               ;;
             comparar)
               CH_ARG=""
               [ "${CHARS_PDF:-0}" != "0" ] && CH_ARG="--chars-pdf $CHARS_PDF"
               python -m scraper.comparar --solo-db \
                 --publicacion "${PUBLICACION:-politica-exterior}" \
-                --numero "$NUMERO" $CH_ARG | tee informe.txt
+                --numero "$NUMERO" $CH_ARG 2>&1 | tee informe.txt
               ;;
             probar-pdf)
               python -m scraper.probar_pdf $PUB_ARG_LENTE \
-                --limite "${LIMITE:-3}" --comparar | tee informe.txt
+                --limite "${LIMITE:-3}" --comparar 2>&1 | tee informe.txt
               ;;
             muestras)
               python -m db.muestras --publicacion "${PUBLICACION:-informe-semanal}" \
-                --anyos "${ANYOS:-2019,2023,2026}" | tee informe.txt
+                --anyos "${ANYOS:-2019,2023,2026}" 2>&1 | tee informe.txt
               ;;
             mantenimiento)
-              python -m db.migrar | tee informe.txt
-              python -m db.diag | tee -a informe.txt
+              python -m db.migrar 2>&1 | tee informe.txt
+              python -m db.diag 2>&1 | tee -a informe.txt
               ;;
             scrapear)
               AN="${ANYOS:-$(date -u +%Y)}"
-              python -m scraper.run $PUB_ARG --years "$AN" --skip-from-db $LIM_ARG | tee informe.txt
-              python -m db.load | tee -a informe.txt
-              python -m db.diag | tee -a informe.txt
+              python -m scraper.run $PUB_ARG --years "$AN" --skip-from-db $LIM_ARG 2>&1 | tee informe.txt
+              python -m db.load 2>&1 | tee -a informe.txt
+              python -m db.diag 2>&1 | tee -a informe.txt
               ;;
             pdfs)
               RE_ARG=""
               [ "$REINTENTAR" = "true" ] && RE_ARG="--reintentar"
-              python -m scraper.pdfs --from-db $PUB_ARG $LIM_ARG $RE_ARG | tee informe.txt
-              python -m db.diag | tee -a informe.txt
+              python -m scraper.pdfs --from-db $PUB_ARG $LIM_ARG $RE_ARG 2>&1 | tee informe.txt
+              python -m db.diag 2>&1 | tee -a informe.txt
               ;;
             *)
               echo "Operación desconocida: $OPERACION"; exit 1 ;;

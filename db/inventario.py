@@ -118,8 +118,8 @@ def main() -> int:
             print(f"\n--- FORMA DE LAS URL POR AÑO ({slug}) ---")
             cur.execute(f"""
                 SELECT EXTRACT(YEAR FROM a.published_date)::int AS anyo,
-                       count(*) FILTER (WHERE a.url LIKE '%/articulo-completo/%') AS completo,
-                       count(*) FILTER (WHERE a.url LIKE '%/articulo/%') AS articulo,
+                       count(*) FILTER (WHERE strpos(a.url, '/articulo-completo/') > 0) AS completo,
+                       count(*) FILTER (WHERE strpos(a.url, '/articulo/') > 0) AS articulo,
                        count(*) AS total,
                        count(*) FILTER (WHERE i.published_date IS NULL) AS sin_fecha
                   FROM articles a
@@ -140,7 +140,7 @@ def main() -> int:
         for slug in ("informe-semanal", "politica-exterior"):
             print(f"\n--- TAMAÑO DE LA PIEZA POR ÉPOCA Y FORMA ({slug}) ---")
             cur.execute(f"""
-                SELECT CASE WHEN a.url LIKE '%/articulo-completo/%'
+                SELECT CASE WHEN strpos(a.url, '/articulo-completo/') > 0
                             THEN 'completo' ELSE 'articulo' END AS forma,
                        CASE WHEN EXTRACT(YEAR FROM a.published_date) >= 2021
                             THEN 'desde 2021' ELSE 'hasta 2020' END AS epoca,
