@@ -153,9 +153,18 @@ def guardar(cur, art_id: int, texto_json: str) -> dict | None:
            VALUES (%s, %s) ON CONFLICT DO NOTHING""",
         [(art_id, c) for c in datos["citas"]],
     )
+    # La web muestra etiquetas planas (articles.tags) desde antes de que
+    # existieran las entidades, y esa columna sigue vacía en todo el archivo.
+    # Se rellena aquí, en la MISMA transacción que las entidades, con los temas
+    # y los lugares: son los que funcionan como etiqueta. Al escribirse juntos
+    # no pueden desincronizarse, y las vistas de la web reviven sin tocarlas.
+    etiquetas = [n for k, n in datos["entidades"] if k == "tema"]
+    etiquetas += [n for k, n in datos["entidades"] if k == "lugar"]
     cur.execute(
-        "UPDATE articles SET enriched_at = now(), enrichment_model = %s WHERE id = %s",
-        (MODELO, art_id))
+        """UPDATE articles
+           SET enriched_at = now(), enrichment_model = %s, tags = %s
+           WHERE id = %s""",
+        (MODELO, etiquetas[:10], art_id))
     return datos
 
 

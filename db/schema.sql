@@ -119,3 +119,16 @@ ALTER TABLE articles ADD COLUMN IF NOT EXISTS enrichment_model TEXT;
 CREATE INDEX IF NOT EXISTS idx_entities_kind_name ON article_entities (kind, name);
 CREATE INDEX IF NOT EXISTS idx_entities_article   ON article_entities (article_id);
 CREATE INDEX IF NOT EXISTS idx_articles_enriched  ON articles (enriched_at);
+
+-- Etiquetas derivadas de las entidades, para los análisis enriquecidos antes
+-- de que se rellenara articles.tags. Idempotente: solo toca los que tienen
+-- entidades y siguen sin etiquetas, así que puede ejecutarse siempre.
+UPDATE articles a
+   SET tags = sub.etiquetas
+  FROM (SELECT article_id,
+               (array_agg(name ORDER BY kind DESC, name))[1:10] AS etiquetas
+          FROM article_entities
+         WHERE kind IN ('tema', 'lugar')
+         GROUP BY article_id) sub
+ WHERE a.id = sub.article_id
+   AND cardinality(a.tags) = 0;
