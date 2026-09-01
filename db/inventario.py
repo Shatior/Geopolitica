@@ -85,18 +85,20 @@ def main() -> int:
         # Cuántas piezas trae cada número. El sitio publica el Informe Semanal
         # partido en secciones, y si esa cifra cambia con los años no estamos
         # comparando lo mismo: un año con una sola pieza por número puede
-        # significar que del informe solo se capturó una parte.
-        print("\n--- PIEZAS POR NÚMERO (¿está el informe entero?) ---")
+        # significar que del informe solo se capturó una parte. El año se toma
+        # del artículo y no del número, porque casi ningún número anterior a
+        # 2021 tiene fecha propia y así desaparecían de este recuento.
+        print("\n--- PIEZAS POR NÚMERO (¿está la publicación entera?) ---")
         cur.execute(f"""
             SELECT p.slug,
-                   EXTRACT(YEAR FROM i.published_date)::int AS anyo,
+                   EXTRACT(YEAR FROM a.published_date)::int AS anyo,
                    count(DISTINCT i.id) AS numeros,
                    count(*) AS piezas,
                    round(count(*)::numeric / count(DISTINCT i.id), 1) AS por_numero
               FROM articles a
               JOIN issues i ON i.id = a.issue_id
               JOIN publications p ON p.id = i.publication_id
-             WHERE a.{SOLO} AND i.published_date IS NOT NULL
+             WHERE a.{SOLO} AND a.published_date IS NOT NULL
              GROUP BY 1, 2 ORDER BY 1, 2
         """)
         actual = None
@@ -111,87 +113,81 @@ def main() -> int:
         # La forma de la URL distingue las dos épocas del sitio y delata si un
         # hueco es suyo o nuestro: si los años antiguos usan el mismo patrón
         # que los modernos pero traen una pieza por número, es que se nos
-        # escaparon cuatro de cada cinco.
-        print("\n--- FORMA DE LAS URL POR AÑO (informe semanal) ---")
-        cur.execute(f"""
-            SELECT EXTRACT(YEAR FROM a.published_date)::int AS anyo,
-                   count(*) FILTER (WHERE a.url LIKE '%/articulo-completo/%') AS completo,
-                   count(*) FILTER (WHERE a.url LIKE '%/articulo/%') AS articulo,
-                   count(*) AS total,
-                   count(*) FILTER (WHERE i.published_date IS NULL) AS sin_fecha
-              FROM articles a
-              JOIN publications p ON p.id = a.publication_id
-              LEFT JOIN issues i ON i.id = a.issue_id
-             WHERE p.slug = 'informe-semanal' AND a.{SOLO}
-               AND a.published_date IS NOT NULL
-             GROUP BY 1 ORDER BY 1
-        """)
-        print(f"    {'año':5} {'/articulo-completo/':>19} {'/articulo/':>11} "
-              f"{'total':>6} {'nº sin fecha':>13}")
-        for anyo, completo, articulo, total, sin_fecha in cur.fetchall():
-            print(f"    {anyo:5} {completo:19} {articulo:11} {total:6} {sin_fecha:13}")
+        # escaparon las demás.
+        for slug in ("informe-semanal", "politica-exterior"):
+            print(f"\n--- FORMA DE LAS URL POR AÑO ({slug}) ---")
+            cur.execute(f"""
+                SELECT EXTRACT(YEAR FROM a.published_date)::int AS anyo,
+                       count(*) FILTER (WHERE a.url LIKE '%/articulo-completo/%') AS completo,
+                       count(*) FILTER (WHERE a.url LIKE '%/articulo/%') AS articulo,
+                       count(*) AS total,
+                       count(*) FILTER (WHERE i.published_date IS NULL) AS sin_fecha
+                  FROM articles a
+                  JOIN publications p ON p.id = a.publication_id
+                  LEFT JOIN issues i ON i.id = a.issue_id
+                 WHERE p.slug = %s AND a.{SOLO}
+                   AND a.published_date IS NOT NULL
+                 GROUP BY 1 ORDER BY 1
+            """, (slug,))
+            print(f"    {'año':5} {'/articulo-completo/':>19} {'/articulo/':>11} "
+                  f"{'total':>6} {'nº sin fecha':>13}")
+            for anyo, completo, articulo, total, sin_fecha in cur.fetchall():
+                print(f"    {anyo:5} {completo:19} {articulo:11} {total:6} {sin_fecha:13}")
 
-        print("\n--- ¿QUÉ ES LA PIEZA /articulo/? (informe semanal) ---")
-        print("    Cada número de 2021 en adelante trae 4 piezas /articulo-completo/")
-        print("    y 1 pieza /articulo/. De 2009-2020 solo tenemos la /articulo/.")
-        print("    Si las dos formas miden lo mismo, la vieja es una sección y")
-        print("    faltan cuatro; si la /articulo/ es mucho más corta, es un")
-        print("    sumario y de esos doce años no tenemos análisis.")
-        cur.execute(f"""
-            SELECT CASE WHEN a.url LIKE '%/articulo-completo/%'
-                        THEN 'completo' ELSE 'articulo' END AS forma,
-                   CASE WHEN EXTRACT(YEAR FROM a.published_date) >= 2021
-                        THEN 'desde 2021' ELSE 'hasta 2020' END AS epoca,
-                   count(*),
-                   percentile_disc(0.50) WITHIN GROUP (
-                       ORDER BY length(coalesce(a.body,''))),
-                   percentile_disc(0.10) WITHIN GROUP (
-                       ORDER BY length(coalesce(a.body,''))),
-                   percentile_disc(0.90) WITHIN GROUP (
-                       ORDER BY length(coalesce(a.body,''))),
-                   count(*) FILTER (WHERE a.is_full)
-              FROM articles a
-              JOIN publications p ON p.id = a.publication_id
-             WHERE p.slug = 'informe-semanal' AND a.{SOLO}
-               AND a.published_date IS NOT NULL
-             GROUP BY 1, 2 ORDER BY 2 DESC, 1
-        """)
-        print(f"    {'forma':10} {'época':11} {'piezas':>7} {'mediana':>8} "
-              f"{'p10':>7} {'p90':>7} {'completas':>10}")
-        for forma, epoca, n, p50, p10, p90, full in cur.fetchall():
-            print(f"    {forma:10} {epoca:11} {n:7} {p50:8} {p10:7} {p90:7} "
-                  f"{full:10}")
+        # Si la pieza de la época vieja mide lo mismo que las de la nueva, es
+        # una pieza entera y solo faltan hermanas; si mide mucho menos, lo que
+        # guardamos de esos años es un resumen.
+        for slug in ("informe-semanal", "politica-exterior"):
+            print(f"\n--- TAMAÑO DE LA PIEZA POR ÉPOCA Y FORMA ({slug}) ---")
+            cur.execute(f"""
+                SELECT CASE WHEN a.url LIKE '%/articulo-completo/%'
+                            THEN 'completo' ELSE 'articulo' END AS forma,
+                       CASE WHEN EXTRACT(YEAR FROM a.published_date) >= 2021
+                            THEN 'desde 2021' ELSE 'hasta 2020' END AS epoca,
+                       count(*),
+                       percentile_disc(0.50) WITHIN GROUP (
+                           ORDER BY length(coalesce(a.body,''))),
+                       percentile_disc(0.10) WITHIN GROUP (
+                           ORDER BY length(coalesce(a.body,''))),
+                       percentile_disc(0.90) WITHIN GROUP (
+                           ORDER BY length(coalesce(a.body,''))),
+                       count(*) FILTER (WHERE a.is_full)
+                  FROM articles a
+                  JOIN publications p ON p.id = a.publication_id
+                 WHERE p.slug = %s AND a.{SOLO}
+                   AND a.published_date IS NOT NULL
+                 GROUP BY 1, 2 ORDER BY 2 DESC, 1
+            """, (slug,))
+            print(f"    {'forma':10} {'época':11} {'piezas':>7} {'mediana':>8} "
+                  f"{'p10':>7} {'p90':>7} {'completas':>10}")
+            for forma, epoca, n, p50, p10, p90, full in cur.fetchall():
+                print(f"    {forma:10} {epoca:11} {n:7} {p50:8} {p10:7} {p90:7} "
+                      f"{full:10}")
 
         print("\n--- TITULARES DE UN NÚMERO DE CADA ÉPOCA ---")
-        cur.execute("""
-            SELECT i.id FROM issues i
-              JOIN publications p ON p.id = i.publication_id
-             WHERE p.slug = 'informe-semanal' AND i.published_date IS NOT NULL
-             ORDER BY abs(EXTRACT(YEAR FROM i.published_date) - 2023), i.id
-             LIMIT 1
-        """)
-        recientes = [r[0] for r in cur.fetchall()]
-        cur.execute("""
-            SELECT a.issue_id FROM articles a
-              JOIN publications p ON p.id = a.publication_id
-             WHERE p.slug = 'informe-semanal' AND a.issue_id IS NOT NULL
-               AND EXTRACT(YEAR FROM a.published_date) BETWEEN 2013 AND 2016
-             ORDER BY a.published_date LIMIT 3
-        """)
-        antiguos = [r[0] for r in cur.fetchall()]
-        for issue_id in recientes + antiguos:
-            cur.execute("""
-                SELECT i.title, i.published_date FROM issues i WHERE i.id = %s
-            """, (issue_id,))
-            fila = cur.fetchone()
-            print(f"\n    Número: {fila[0]}  ({fila[1]})")
-            cur.execute("""
-                SELECT a.title, length(coalesce(a.body,'')), a.url
-                  FROM articles a WHERE a.issue_id = %s ORDER BY a.id
-            """, (issue_id,))
-            for titulo, largo, url in cur.fetchall():
-                forma = "completo" if "/articulo-completo/" in url else "articulo"
-                print(f"      [{forma:8}] {largo:6} chars  {(titulo or '')[:60]}")
+        for slug in ("informe-semanal", "politica-exterior"):
+            for lo, hi in ((2013, 2016), (2023, 2024)):
+                cur.execute("""
+                    SELECT a.issue_id FROM articles a
+                      JOIN publications p ON p.id = a.publication_id
+                     WHERE p.slug = %s AND a.issue_id IS NOT NULL
+                       AND EXTRACT(YEAR FROM a.published_date) BETWEEN %s AND %s
+                     ORDER BY a.published_date LIMIT 1
+                """, (slug, lo, hi))
+                fila = cur.fetchone()
+                if not fila:
+                    continue
+                cur.execute("SELECT title, published_date FROM issues WHERE id = %s",
+                            (fila[0],))
+                num = cur.fetchone()
+                print(f"\n    {slug} · {num[0]}  ({num[1]})")
+                cur.execute("""
+                    SELECT a.title, length(coalesce(a.body,'')), a.url
+                      FROM articles a WHERE a.issue_id = %s ORDER BY a.id
+                """, (fila[0],))
+                for titulo, largo, url in cur.fetchall():
+                    forma = "completo" if "/articulo-completo/" in url else "articulo"
+                    print(f"      [{forma:8}] {largo:6} chars  {(titulo or '')[:58]}")
 
         print("\n--- LONGITUD DE LOS ANÁLISIS ---")
         cur.execute(f"""
