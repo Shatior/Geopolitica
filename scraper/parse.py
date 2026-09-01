@@ -23,6 +23,35 @@ BODY_SELECTORS = [
     "main",
 ]
 
+# Títulos/descripciones genéricos del sitio: aparecen en og:title, <title> y
+# meta description de muchas páginas de artículo, y NO son el titular real.
+GENERIC_TITLES = {
+    "política exterior",
+    "política exterior | análisis internacional en español",
+    "análisis internacional en español",
+}
+GENERIC_DESC_PREFIXES = (
+    "estudios de política exterior",
+    "grupo editorial privado e independiente",
+)
+# Migajero que el tema imprime como <h1> antes del titular real
+_RE_BREADCRUMB = re.compile(
+    r"(informe semanal de política exterior|revista política exterior)?\s*>?\s*n[úu]mero\s*\d+",
+    re.IGNORECASE,
+)
+
+
+def _is_generic_title(text: str | None) -> bool:
+    if not text:
+        return True
+    t = re.sub(r"\s+", " ", text).strip().lower()
+    return (
+        t in GENERIC_TITLES
+        or bool(_RE_BREADCRUMB.fullmatch(t))
+        or t.startswith(GENERIC_DESC_PREFIXES)
+    )
+
+
 PAYWALL_MARKERS = [
     "suscríbete para seguir leyendo",
     "contenido exclusivo para suscriptores",
@@ -185,11 +214,19 @@ def parse_article(html: str, url: str) -> dict:
     soup = soup_of(html)
     ld = _json_ld(soup)
 
-    title = (
-        ld.get("headline")
-        or _meta(soup, "og:title")
-        or (soup.h1.get_text(strip=True) if soup.h1 else None)
-        or (soup.title.get_text(strip=True) if soup.title else url)
+    # El tema del sitio sirve og:title/<title> genéricos ("Política Exterior")
+    # en muchas páginas de artículo, y antepone un <h1> de migajero
+    # ("INFORME SEMANAL… > NÚMERO 1479") al <h1> con el titular real. Se toma
+    # el primer candidato que no sea genérico, en orden de fiabilidad.
+    candidatos = [ld.get("headline"), _meta(soup, "og:title")]
+    candidatos += [h.get_text(" ", strip=True) for h in soup.find_all("h1")]
+    candidatos += [
+        soup.title.get_text(strip=True) if soup.title else None,
+        url,
+    ]
+    title = next(
+        (re.sub(r"\s+", " ", c).strip() for c in candidatos if not _is_generic_title(c)),
+        url,
     )
     title = re.sub(r"\s*\|\s*Política Exterior\s*$", "", title)
 
@@ -230,6 +267,8 @@ def parse_article(html: str, url: str) -> dict:
         )
 
     subtitle = _meta(soup, "og:description")
+    if _is_generic_title(subtitle):  # descripción corporativa del sitio
+        subtitle = None
     body = _best_body(soup)
 
     lower = (body or "").lower()
