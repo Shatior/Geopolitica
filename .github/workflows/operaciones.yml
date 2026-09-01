@@ -22,6 +22,9 @@ on:
           - inventario       # radiografía del corpus para diseñar análisis
           - lentes           # ejecuta las lentes de análisis (sin coste de IA)
           - muestras         # imprime textos de ejemplo por año, para leerlos
+          - colas            # ensayo en seco: qué cola de navegación se cortaría
+          - colas-escribir   # ESCRIBE: corta esa cola del cuerpo (reversible)
+          - colas-deshacer   # ESCRIBE: devuelve las colas cortadas a su sitio
           - probar-pdf       # comprueba si la suscripción da acceso a los PDF
           - comparar         # lista lo guardado de un número, para cotejarlo con su PDF
           - enriquecer-estimar   # cuánto costaría enriquecer lo pendiente (gratis)
@@ -146,6 +149,15 @@ jobs:
             muestras)
               python -m db.muestras --publicacion "${PUBLICACION:-informe-semanal}" \
                 --anyos "${ANYOS:-2019,2023,2026}" 2>&1 | tee informe.txt
+              ;;
+            colas)
+              python -m db.colas 2>&1 | tee informe.txt
+              ;;
+            colas-escribir)
+              python -m db.colas --escribir 2>&1 | tee informe.txt
+              ;;
+            colas-deshacer)
+              python -m db.colas --deshacer --escribir 2>&1 | tee informe.txt
               ;;
             mantenimiento)
               python -m db.migrar 2>&1 | tee informe.txt

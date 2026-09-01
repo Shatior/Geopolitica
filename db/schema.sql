@@ -167,3 +167,11 @@ UPDATE articles a
          GROUP BY article_id) sub
  WHERE a.id = sub.article_id
    AND a.tags IS DISTINCT FROM sub.etiquetas;
+
+
+-- El cuerpo guardado terminaba con el bloque de navegación del sitio: el
+-- rótulo «ARTÍCULOS RELACIONADOS» y los titulares de otras piezas. Son
+-- palabras que el análisis no dijo y que las lentes contaban como suyas.
+-- db/colas.py las corta y guarda aquí lo quitado, de modo que el cuerpo
+-- original se reconstruye por concatenación.
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS trimmed_tail TEXT;
