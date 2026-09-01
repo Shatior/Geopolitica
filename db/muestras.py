@@ -20,6 +20,9 @@ import psycopg
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from scraper.config import aviso_database_url, load_config  # noqa: E402
 
+# Se escriben sin acento y se comparan sin acento: buscar «unicamente» con
+# ILIKE nunca encuentra «únicamente», y el marcador salía 0% en todos los años
+# aparentando estabilidad donde no había medición.
 MARCADORES = ["mediante", "mantiene", "progresivamente", "plenamente",
               "unicamente", "estructural", "eventual", "reforzar"]
 
@@ -67,7 +70,8 @@ def main(argv=None) -> int:
                     JOIN publications p ON p.id = a.publication_id
                     WHERE p.slug = %s AND a.kind <> 'portada' AND a.is_full
                       AND EXTRACT(YEAR FROM a.published_date) = %s
-                      AND a.body ILIKE %s
+                      AND translate(lower(a.body),
+                          'áéíóúüñÁÉÍÓÚÜÑ', 'aeiouunAEIOUUN') LIKE %s
                 """, (args.publicacion, anyo, f"%{m}%"))
                 marcas.append(f"{m} {cur.fetchone()[0] * 100 // max(n, 1)}%")
             print("  presencia: " + " · ".join(marcas))
@@ -76,7 +80,7 @@ def main(argv=None) -> int:
             # registro mucho mejor que cualquier hipótesis sobre la agenda.
             # 'authors' es TEXT[]: un análisis puede ir firmado por varios.
             cur.execute("""
-                SELECT count(*) FILTER (WHERE cardinality(a.authors) > 0),
+                SELECT count(DISTINCT a.id) FILTER (WHERE cardinality(a.authors) > 0),
                        count(DISTINCT au)
                 FROM articles a JOIN publications p ON p.id = a.publication_id
                 LEFT JOIN LATERAL unnest(a.authors) AS au ON true
