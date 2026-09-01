@@ -60,6 +60,9 @@ mark { background: rgba(169,119,44,0.22); color: inherit; padding: 0 .08em; }
   border: 1px solid var(--prusia); background: var(--prusia); color: #f3f4f0;
   font-family: var(--ui); font-size: 12.5px; padding: 6px 16px; cursor: pointer;
 }
+.barra .limpiar { font-family: var(--ui); font-size: 12.5px; color: var(--gris); white-space: nowrap; }
+.barra .limpiar:hover { color: var(--prusia); }
+.barra select:focus, .barra input:focus { outline: 2px solid var(--prusia); outline-offset: 1px; }
 .nav-enlaces { margin-left: auto; display: flex; gap: 18px; font-family: var(--ui); font-size: 12.5px; color: var(--gris); }
 .nav-enlaces a { color: var(--gris); }
 .nav-enlaces a.activo { color: var(--tinta); border-bottom: 2px solid var(--prusia); padding-bottom: 2px; }
@@ -98,15 +101,16 @@ hr.filete { border: none; border-top: 1px solid var(--tinta); margin: 28px 0 0; 
     <form method="get" action="/">
       <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5d6672" stroke-width="1.8"><circle cx="9" cy="9" r="6"></circle><path d="M13.5 13.5 L18 18"></path></svg>
       <input type="search" name="q" value="{{ q or '' }}" placeholder="Buscar en la hemeroteca…">
-      <select name="pub">
+      <select name="pub" onchange="this.form.submit()">
         <option value="">Todas las publicaciones</option>
         {% for p in pubs %}<option value="{{ p.slug }}" {% if p.slug == pub %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
       </select>
-      <select name="year">
+      <select name="year" onchange="this.form.submit()">
         <option value="0">Todos los años</option>
         {% for y in years %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}
       </select>
       <button type="submit">Buscar</button>
+      {% if q or pub or year %}<a href="/" class="limpiar" title="Quitar filtros">Limpiar</a>{% endif %}
     </form>
     <nav class="nav-enlaces">
       <a href="/" class="{{ 'activo' if seccion == 'archivo' else '' }}">Archivo</a>
