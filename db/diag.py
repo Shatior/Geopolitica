@@ -16,7 +16,7 @@ import psycopg
 from bs4 import BeautifulSoup
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from scraper.config import ROOT, load_config  # noqa: E402
+from scraper.config import ROOT, aviso_database_url, load_config  # noqa: E402
 
 GENERIC_TITLE = "Política Exterior"
 GENERIC_SUB = "Estudios de Política Exterior%"
@@ -24,8 +24,9 @@ GENERIC_SUB = "Estudios de Política Exterior%"
 
 def main() -> int:
     cfg = load_config()
-    if not cfg.database_url:
-        print("Falta DATABASE_URL en .env")
+    aviso = aviso_database_url(cfg.database_url)
+    if aviso:
+        print(aviso)
         return 2
     with psycopg.connect(cfg.database_url) as conn, conn.cursor() as cur:
         cur.execute("SELECT count(*) FROM articles")

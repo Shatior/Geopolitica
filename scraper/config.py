@@ -64,3 +64,23 @@ def load_config(path: Path | None = None) -> Config:
 def ensure_dirs() -> None:
     for d in (RAW_DIR, PARSED_DIR, DEBUG_DIR):
         d.mkdir(parents=True, exist_ok=True)
+
+
+def aviso_database_url(url: str | None) -> str | None:
+    """Devuelve un aviso si la URL de la base de datos no sirve desde fuera de
+    Railway. La variable DATABASE_URL de Railway apunta a un host interno
+    (*.railway.internal) que solo resuelve dentro de su red: desde tu PC o
+    desde un runner de GitHub hay que usar DATABASE_PUBLIC_URL."""
+    if not url:
+        return ("Falta DATABASE_URL. En Railway, servicio Postgres → Variables → "
+                "copia DATABASE_PUBLIC_URL (la pública, no la interna).")
+    if ".railway.internal" in url and not os.getenv("RAILWAY_ENVIRONMENT"):
+        return ("DATABASE_URL apunta al host interno de Railway "
+                "(*.railway.internal), que solo resuelve dentro de Railway. "
+                "Desde tu PC o desde GitHub Actions usa DATABASE_PUBLIC_URL "
+                "(la de *.proxy.rlwy.net).")
+    return None
+
+
+def url_interna_de_railway(url: str | None) -> bool:
+    return bool(url) and ".railway.internal" in url

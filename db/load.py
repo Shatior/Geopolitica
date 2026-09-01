@@ -16,7 +16,8 @@ import psycopg
 from psycopg.rows import dict_row
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from scraper.config import PARSED_DIR, ROOT, load_config  # noqa: E402
+from scraper.config import (PARSED_DIR, ROOT, aviso_database_url,  # noqa: E402
+                            load_config)
 
 log = logging.getLogger("db")
 SCHEMA = ROOT / "db" / "schema.sql"
@@ -37,8 +38,9 @@ def read_jsonl(path: Path) -> list[dict]:
 def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     cfg = load_config()
-    if not cfg.database_url:
-        log.error("Falta DATABASE_URL en .env (la URL pública de Postgres en Railway).")
+    aviso = aviso_database_url(cfg.database_url)
+    if aviso:
+        log.error("%s", aviso)
         return 2
 
     issues = read_jsonl(PARSED_DIR / "issues.jsonl")

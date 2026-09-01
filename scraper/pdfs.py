@@ -23,7 +23,8 @@ import re
 import sys
 import unicodedata
 
-from .config import DATA_DIR, PARSED_DIR, ensure_dirs, load_config
+from .config import (DATA_DIR, PARSED_DIR, aviso_database_url,
+                      ensure_dirs, load_config)
 from .parse import MIN_FULL_BODY
 from .session import PoliteSession, ScraperBlocked
 
@@ -203,8 +204,9 @@ def main(argv=None) -> int:
     estado = {}
 
     if args.from_db:
-        if not cfg.database_url:
-            log.error("--from-db requiere DATABASE_URL en el entorno o .env")
+        aviso = aviso_database_url(cfg.database_url)
+        if aviso:
+            log.error("%s", aviso)
             return 2
         pendientes = pendientes_desde_db(cfg.database_url, pubs)
     else:
