@@ -89,7 +89,7 @@ jobs:
           PE_COOKIES_FILE: data/cookies.txt
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           # Se aceptan varios nombres: el secreto pudo crearse con cualquiera.
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || secrets.CLAUDE_API_KEY || secrets.ANTHROPIC_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || secrets.CLAUDE || secrets.CLAUDE_API_KEY || secrets.ANTHROPIC_KEY }}
           OPERACION: ${{ inputs.operacion }}
           PUBLICACION: ${{ inputs.publicacion }}
           ANYOS: ${{ inputs.anyos }}

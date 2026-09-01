@@ -56,7 +56,7 @@ def _clave() -> None:
         "El runner recibe ANTHROPIC_API_KEY vacía, así que el secreto no existe "
         "en el repositorio\no tiene otro nombre. En GitHub: Settings → Secrets "
         "and variables → Actions,\ny compruébalo. El workflow acepta que se "
-        "llame ANTHROPIC_API_KEY, CLAUDE_API_KEY\no ANTHROPIC_KEY.\n"
+        "llame ANTHROPIC_API_KEY, CLAUDE,\nCLAUDE_API_KEY o ANTHROPIC_KEY. Ojo: los secretos NO se comparten entre\nrepositorios; tiene que estar en Shatior/Geopolitica, no en otro.\n"
         "No se ha enviado nada ni se ha gastado nada."
     )
 
