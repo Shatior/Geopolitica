@@ -41,9 +41,24 @@ log = logging.getLogger("rescate")
 # distinguir siete secciones entre sí, corto para aguantar erratas.
 HUELLA = 90
 
-# Un titular es del número, no del texto, si dice «#ISPE 870…» o repite el
-# nombre del número. Esos son los que hay que corregir.
-GENERICO = re.compile(r"^\s*#?\s*(ispe|informe semanal)\b", re.I)
+# Un titular es del número y no del texto cuando, quitado el «#ISPE 870»,
+# no queda nada o queda solo una fecha. «#ISPE 1162: Sísifo en Buenos Aires»
+# sí lleva título propio y no se toca.
+_PREFIJO = re.compile(
+    r"^\s*#?\s*(?:ispe|informe semanal(?: de pol[íi]tica exterior)?)"
+    r"\s*n?[.\u00ba\u00b0]?\s*\d*", re.I)
+_SOLO_FECHA = re.compile(
+    r"^[\s.:\u00b7,\-\u2013]*(?:\d{1,2}\s*)?(?:de\s+)?"
+    r"(?:ene|feb|mar|abr|may|jun|jul|ago|sep|set|oct|nov|dic)[a-z]*\.?"
+    r"\s*(?:de\s+)?\d{0,4}[\s.]*$", re.I)
+
+
+def GENERICO(titulo: str | None):   # noqa: N802  (se usa como un patrón)
+    """Verdadero si el titular guardado nombra el número y no el texto."""
+    resto = _PREFIJO.sub("", titulo or "", count=1)
+    if resto == (titulo or ""):
+        return None                 # no lleva el prefijo: es un titular propio
+    return not resto.strip(" .:\u00b7,-\u2013") or _SOLO_FECHA.match(resto)
 
 
 def _plano(t: str) -> str:
@@ -149,7 +164,7 @@ def main(argv=None) -> int:
             for i, sec in enumerate(secciones):
                 if i in pares:
                     art = next(a for a in articulos if a["id"] == pares[i])
-                    if GENERICO.match(art["title"] or ""):
+                    if GENERICO(art["title"]):
                         log.info("  nº %s · corrijo titular: «%s» → «%s»",
                                  num, (art["title"] or "")[:34], sec["titulo"][:44])
                         if not args.simular:

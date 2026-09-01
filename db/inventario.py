@@ -268,6 +268,31 @@ def main() -> int:
                         if linea.strip():
                             print(f"      | {linea.strip()[:78]}")
 
+        # Cuánto pesa esa cola ajena. Todo lo que va tras «ARTÍCULOS
+        # RELACIONADOS» son titulares de otras piezas, y hoy se cuentan como
+        # si el análisis los hubiera dicho.
+        print("\n--- COLA DE «ARTÍCULOS RELACIONADOS» DENTRO DEL CUERPO ---")
+        cur.execute(f"""
+            SELECT p.slug,
+                   CASE WHEN EXTRACT(YEAR FROM a.published_date) >= 2021
+                        THEN 'desde 2021' ELSE 'hasta 2020' END AS epoca,
+                   count(*) AS piezas,
+                   count(*) FILTER (WHERE a.body ILIKE '%%art_culos relacionados%%') AS con_cola,
+                   coalesce(percentile_disc(0.50) WITHIN GROUP (
+                       ORDER BY length(a.body) - strpos(upper(a.body), 'RELACIONADOS')
+                   ) FILTER (WHERE a.body ILIKE '%%art_culos relacionados%%'), 0) AS chars_cola
+              FROM articles a
+              JOIN publications p ON p.id = a.publication_id
+             WHERE a.{SOLO} AND a.body IS NOT NULL
+               AND a.published_date IS NOT NULL
+             GROUP BY 1, 2 ORDER BY 1, 2 DESC
+        """)
+        print(f"    {'publicación':18} {'época':11} {'piezas':>7} {'con cola':>9} "
+              f"{'% ':>5} {'chars de cola':>14}")
+        for slug, epoca, piezas, cola, chars in cur.fetchall():
+            print(f"    {slug:18} {epoca:11} {piezas:7} {cola:9} "
+                  f"{100*cola//max(piezas,1):4}% {chars:14}")
+
         print("\n--- LONGITUD DE LOS ANÁLISIS ---")
         cur.execute(f"""
             SELECT p.slug,

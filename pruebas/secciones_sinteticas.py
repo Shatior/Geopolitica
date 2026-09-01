@@ -100,11 +100,12 @@ def test_emparejar():
 
 def test_titulares_genericos():
     print("\nTITULARES QUE HAY QUE CORREGIR")
-    for t in ("#ISPE 870. 16 diciembre 2013", "ISPE 824",
-              "Informe Semanal de Política Exterior 872"):
-        igual(f"genérico: {t[:32]}", True, bool(GENERICO.match(t)))
-    for t in ("Crimen –casi– sin castigo", "Santos y Maduro, vidas paralelas"):
-        igual(f"propio: {t[:32]}", False, bool(GENERICO.match(t)))
+    for t in ("#ISPE 870. 16 diciembre 2013", "ISPE 824", "#ISPE 1163",
+              "Informe Semanal de Política Exterior 872", "ISPE 900 · 3 ene 2015"):
+        igual(f"genérico: {t[:36]}", True, bool(GENERICO(t)))
+    for t in ("Crimen –casi– sin castigo", "Santos y Maduro, vidas paralelas",
+              "#ISPE 1162: Sísifo en Buenos Aires", "#ISPE 1163: Paz en Libia"):
+        igual(f"propio: {t[:36]}", False, bool(GENERICO(t)))
 
 
 def main() -> int:
