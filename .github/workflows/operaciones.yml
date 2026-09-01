@@ -20,6 +20,7 @@ on:
           - diagnostico      # informe de calidad de los datos (no toca nada)
           - mantenimiento    # aplica esquema y clasificaciones (no toca el sitio)
           - inventario       # radiografía del corpus para diseñar análisis
+          - lentes           # ejecuta las lentes de análisis (sin coste de IA)
           - scrapear         # busca números nuevos y los carga
           - pdfs             # rescata texto de los PDF de números incompletos
       publicacion:
@@ -89,6 +90,8 @@ jobs:
           set -o pipefail
           PUB_ARG=""
           [ -n "$PUBLICACION" ] && PUB_ARG="--publication $PUBLICACION"
+          PUB_ARG_LENTE=""
+          [ -n "$PUBLICACION" ] && PUB_ARG_LENTE="--publicacion $PUBLICACION"
           LIM_ARG=""
           [ "${LIMITE:-0}" != "0" ] && LIM_ARG="--limit $LIMITE"
 
@@ -98,6 +101,9 @@ jobs:
               ;;
             inventario)
               python -m db.inventario | tee informe.txt
+              ;;
+            lentes)
+              python -m agentes.run $PUB_ARG_LENTE | tee informe.txt
               ;;
             mantenimiento)
               python -m db.migrar | tee informe.txt
