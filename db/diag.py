@@ -55,6 +55,35 @@ def main() -> int:
         )
         rows = cur.fetchall()
 
+        # --- otras anomalías de calidad ---
+        print("\n--- Otras anomalías ---")
+        cur.execute("SELECT count(*) FROM articles WHERE title LIKE 'http%'")
+        print(f"Títulos que quedaron como URL: {cur.fetchone()[0]}")
+        cur.execute(
+            """SELECT count(*) FROM articles
+               WHERE coalesce(body, '') = '' OR length(body) < 200"""
+        )
+        print(f"Artículos con cuerpo muy corto (<200 chars): {cur.fetchone()[0]}")
+        cur.execute(
+            """SELECT title, count(*) AS n FROM articles
+               GROUP BY title HAVING count(*) > 2 ORDER BY n DESC LIMIT 8"""
+        )
+        rep = cur.fetchall()
+        if rep:
+            print("Títulos repetidos (posible extracción incorrecta):")
+            for t, n in rep:
+                print(f"   {n:4}×  {t[:70]}")
+        else:
+            print("Sin títulos sospechosamente repetidos.")
+        cur.execute(
+            """SELECT p.slug, count(*), min(a.published_date), max(a.published_date)
+               FROM articles a JOIN publications p ON p.id = a.publication_id
+               GROUP BY p.slug ORDER BY p.slug"""
+        )
+        print("\nCobertura por publicación:")
+        for slug, n, d1, d2 in cur.fetchall():
+            print(f"   {slug:20} {n:5} artículos   {d1} → {d2}")
+
     print("\n--- Muestra (los más recientes) ---")
     for url, raw_path, blen, binicio in rows:
         print(f"\nURL: {url}")
