@@ -37,6 +37,11 @@ on:
         description: "Máximo de artículos/números en esta ejecución (0 = sin límite)"
         required: false
         default: "0"
+      reintentar:
+        description: "Solo en 'pdfs': reintentar también los números ya probados antes"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -77,6 +82,7 @@ jobs:
           PUBLICACION: ${{ inputs.publicacion }}
           ANYOS: ${{ inputs.anyos }}
           LIMITE: ${{ inputs.limite }}
+          REINTENTAR: ${{ inputs.reintentar }}
         run: |
           set -o pipefail
           PUB_ARG=""
@@ -95,7 +101,9 @@ jobs:
               python -m db.diag | tee -a informe.txt
               ;;
             pdfs)
-              python -m scraper.pdfs --from-db $PUB_ARG $LIM_ARG | tee informe.txt
+              RE_ARG=""
+              [ "$REINTENTAR" = "true" ] && RE_ARG="--reintentar"
+              python -m scraper.pdfs --from-db $PUB_ARG $LIM_ARG $RE_ARG | tee informe.txt
               python -m db.diag | tee -a informe.txt
               ;;
             *)
