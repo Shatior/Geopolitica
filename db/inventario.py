@@ -201,9 +201,9 @@ def main() -> int:
                    CASE WHEN length(a.body) < 3000 THEN 'corta' ELSE 'larga' END AS talla,
                    count(*) AS piezas,
                    count(*) FILTER (
-                       WHERE rtrim(a.body) ~ '[.!?»"'')]$'
-                         AND rtrim(a.body) !~ '(\.\.\.|…)$') AS cierran_bien,
-                   count(*) FILTER (WHERE rtrim(a.body) ~ '(\.\.\.|…)$') AS suspensivos
+                       WHERE rtrim(a.body, E' \t\r\n') ~ '[.!?»"'')]$'
+                         AND rtrim(a.body, E' \t\r\n') !~ '(\.\.\.|…)$') AS cierran_bien,
+                   count(*) FILTER (WHERE rtrim(a.body, E' \t\r\n') ~ '(\.\.\.|…)$') AS suspensivos
               FROM articles a
               JOIN publications p ON p.id = a.publication_id
              WHERE a.{SOLO} AND a.body IS NOT NULL AND length(a.body) > 0
@@ -216,13 +216,30 @@ def main() -> int:
             print(f"    {slug:18} {epoca:11} {talla:6} {n:7} "
                   f"{bien:8} ({100*bien//max(n,1):3}%) {susp:12}")
 
-        print("\n    Cómo acaban seis piezas cortas de la revista antes de 2021:")
+        # Algunas fichas antiguas no traen artículo: traen el aviso de que el
+        # texto está en el PDF. Eso no es un análisis corto, es un hueco.
         cur.execute(f"""
-            SELECT right(rtrim(a.body), 70), a.title
+            SELECT p.slug,
+                   CASE WHEN EXTRACT(YEAR FROM a.published_date) >= 2021
+                        THEN 'desde 2021' ELSE 'hasta 2020' END AS epoca,
+                   count(*) FILTER (WHERE a.body ILIKE '%%descargar pdf%%') AS avisos,
+                   count(*) AS piezas
+              FROM articles a
+              JOIN publications p ON p.id = a.publication_id
+             WHERE a.{SOLO} AND a.published_date IS NOT NULL
+             GROUP BY 1, 2 ORDER BY 1, 2 DESC
+        """)
+        print("\n    Fichas cuyo «texto» es el aviso de descargar el PDF:")
+        for slug, epoca, avisos, piezas in cur.fetchall():
+            print(f"      {slug:18} {epoca:11} {avisos:5} de {piezas:5}")
+
+        print("\n    Cómo acaban seis piezas cortas de la revista, 2009-2020:")
+        cur.execute(f"""
+            SELECT right(rtrim(a.body, E' \t\r\n'), 70), a.title
               FROM articles a JOIN publications p ON p.id = a.publication_id
              WHERE p.slug = 'politica-exterior' AND a.{SOLO}
                AND length(a.body) BETWEEN 1 AND 2999
-               AND EXTRACT(YEAR FROM a.published_date) < 2021
+               AND EXTRACT(YEAR FROM a.published_date) BETWEEN 2009 AND 2020
              ORDER BY a.id LIMIT 6
         """)
         for final, titulo in cur.fetchall():
