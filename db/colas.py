@@ -199,9 +199,9 @@ def main(argv=None) -> int:
                   "--deshacer --escribir.")
             return 0
 
-        # Una UPDATE por fila son 2.595 idas y venidas a Railway, y cada una
-        # rehace el tsvector y el índice GIN: media hora larga. En un solo
-        # UPDATE contra una tabla de valores es un viaje y un barrido.
+        # Una UPDATE por fila son 2.595 idas y venidas a Railway; en un solo
+        # UPDATE contra una tabla de valores es un viaje y un barrido, y el
+        # corte entero se resuelve en unos ocho segundos.
         cur.execute("""
             UPDATE articles a
                SET body = v.cuerpo, trimmed_tail = v.cola
