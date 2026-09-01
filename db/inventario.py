@@ -189,6 +189,46 @@ def main() -> int:
                     forma = "completo" if "/articulo-completo/" in url else "articulo"
                     print(f"      [{forma:8}] {largo:6} chars  {(titulo or '')[:58]}")
 
+        # Una pieza corta puede ser una columna breve o el arranque de un
+        # artículo que se cortó al guardarlo. Lo distingue el final: un texto
+        # entero acaba en punto; uno truncado acaba a media frase o en
+        # puntos suspensivos.
+        print("\n--- ¿ESTÁN ENTERAS LAS PIEZAS? (final del texto) ---")
+        cur.execute(f"""
+            SELECT p.slug,
+                   CASE WHEN EXTRACT(YEAR FROM a.published_date) >= 2021
+                        THEN 'desde 2021' ELSE 'hasta 2020' END AS epoca,
+                   CASE WHEN length(a.body) < 3000 THEN 'corta' ELSE 'larga' END AS talla,
+                   count(*) AS piezas,
+                   count(*) FILTER (
+                       WHERE rtrim(a.body) ~ '[.!?»"'')]$'
+                         AND rtrim(a.body) !~ '(\.\.\.|…)$') AS cierran_bien,
+                   count(*) FILTER (WHERE rtrim(a.body) ~ '(\.\.\.|…)$') AS suspensivos
+              FROM articles a
+              JOIN publications p ON p.id = a.publication_id
+             WHERE a.{SOLO} AND a.body IS NOT NULL AND length(a.body) > 0
+               AND a.published_date IS NOT NULL
+             GROUP BY 1, 2, 3 ORDER BY 1, 2 DESC, 3
+        """)
+        print(f"    {'publicación':18} {'época':11} {'talla':6} {'piezas':>7} "
+              f"{'cierran bien':>13} {'suspensivos':>12}")
+        for slug, epoca, talla, n, bien, susp in cur.fetchall():
+            print(f"    {slug:18} {epoca:11} {talla:6} {n:7} "
+                  f"{bien:8} ({100*bien//max(n,1):3}%) {susp:12}")
+
+        print("\n    Cómo acaban seis piezas cortas de la revista antes de 2021:")
+        cur.execute(f"""
+            SELECT right(rtrim(a.body), 70), a.title
+              FROM articles a JOIN publications p ON p.id = a.publication_id
+             WHERE p.slug = 'politica-exterior' AND a.{SOLO}
+               AND length(a.body) BETWEEN 1 AND 2999
+               AND EXTRACT(YEAR FROM a.published_date) < 2021
+             ORDER BY a.id LIMIT 6
+        """)
+        for final, titulo in cur.fetchall():
+            print(f"      «…{final.strip()}»")
+            print(f"         — {(titulo or '')[:56]}")
+
         print("\n--- LONGITUD DE LOS ANÁLISIS ---")
         cur.execute(f"""
             SELECT p.slug,
