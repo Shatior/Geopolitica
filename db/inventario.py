@@ -108,6 +108,29 @@ def main() -> int:
             print(f"    {anyo}  {numeros:4} nums {piezas:5} piezas "
                   f"{por:5} por num{aviso}")
 
+        # La forma de la URL distingue las dos épocas del sitio y delata si un
+        # hueco es suyo o nuestro: si los años antiguos usan el mismo patrón
+        # que los modernos pero traen una pieza por número, es que se nos
+        # escaparon cuatro de cada cinco.
+        print("\n--- FORMA DE LAS URL POR AÑO (informe semanal) ---")
+        cur.execute(f"""
+            SELECT EXTRACT(YEAR FROM a.published_date)::int AS anyo,
+                   count(*) FILTER (WHERE a.url LIKE '%/articulo-completo/%') AS completo,
+                   count(*) FILTER (WHERE a.url LIKE '%/articulo/%') AS articulo,
+                   count(*) AS total,
+                   count(*) FILTER (WHERE i.published_date IS NULL) AS sin_fecha
+              FROM articles a
+              JOIN publications p ON p.id = a.publication_id
+              LEFT JOIN issues i ON i.id = a.issue_id
+             WHERE p.slug = 'informe-semanal' AND a.{SOLO}
+               AND a.published_date IS NOT NULL
+             GROUP BY 1 ORDER BY 1
+        """)
+        print(f"    {'año':5} {'/articulo-completo/':>19} {'/articulo/':>11} "
+              f"{'total':>6} {'nº sin fecha':>13}")
+        for anyo, completo, articulo, total, sin_fecha in cur.fetchall():
+            print(f"    {anyo:5} {completo:19} {articulo:11} {total:6} {sin_fecha:13}")
+
         print("\n--- LONGITUD DE LOS ANÁLISIS ---")
         cur.execute(f"""
             SELECT p.slug,
