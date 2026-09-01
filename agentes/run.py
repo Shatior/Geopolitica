@@ -14,13 +14,15 @@ import argparse
 import sys
 import time
 
-from . import cronista, senales
+from . import cronista, entidades, senales
 from .base import cargar_corpus, conectar
 
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Lentes de análisis del archivo")
-    ap.add_argument("--lente", choices=["cronista", "senales", "todas"], default="todas")
+    ap.add_argument("--lente",
+                    choices=["cronista", "senales", "entidades", "todas"],
+                    default="todas")
     ap.add_argument("--publicacion", default=None, help="slug; por defecto, todas")
     ap.add_argument("--escala", choices=["anio", "semestre"], default="anio")
     ap.add_argument("--desde", type=int, default=0, help="año inicial del corpus")
@@ -58,6 +60,14 @@ def main(argv=None) -> int:
 
     if args.lente in ("cronista", "todas"):
         print(cronista.informe(c, cronista.analizar(c)))
+        print()
+
+    if args.lente in ("entidades", "todas"):
+        # Cuenta lo que el enriquecimiento identificó; si no hay nada
+        # enriquecido todavía, lo dice y sigue.
+        datos = entidades.cargar(url, publicacion=args.publicacion,
+                                 escala=args.escala, desde=args.desde)
+        print(entidades.informe(entidades.analizar(datos)))
         print()
 
     if args.lente in ("senales", "todas"):
