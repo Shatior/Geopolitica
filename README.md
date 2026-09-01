@@ -180,6 +180,56 @@ uvicorn web.app:app --reload
 ⚠️ El contenido es de pago: no despliegues sin `WEB_PASSWORD` definida (sin
 ella la app no pide contraseña) y no compartas el dominio.
 
+## Rescatar los doce años que la web nunca publicó (`rescate/`)
+
+Hasta 2020 el sitio publicaba **una sola sección de cada Informe Semanal**.
+Medido contra el PDF del número 870 (16 dic 2013):
+
+```
+   3.259 caracteres  lo que guardamos de la web
+  21.659 caracteres  las siete secciones del PDF
+```
+
+Las otras seis nunca estuvieron en internet, no están bajo otra URL y no se
+recuperan scrapeando: existen solo dentro del PDF. Desde 2021 el sitio publica
+el informe entero repartido en cinco piezas, así que esa época ya está
+completa (el mismo cociente da 1,1×).
+
+El rescate se lanza **desde tu máquina**, no desde GitHub: necesita la sesión
+del sitio para bajar los PDF, y las descargas desde un centro de datos ya nos
+costaron una sesión.
+
+```bash
+# 1. Bajar los PDF de los números que aún no lo tengan (necesita sesión)
+python -m scraper.pdfs --from-db --publication informe-semanal
+
+# 2. Ver qué saldría de un número, sin base de datos ni escrituras
+python -m rescate.run --probar data/pdfs/informe-semanal-870.pdf
+
+# 3. Ensayo en seco sobre todo lo que haya en disco
+python -m rescate.run --simular
+
+# 4. Cargar
+python -m rescate.run
+```
+
+Qué hace con lo que ya existe: de cada número ya teníamos una pieza, que es
+una de las secciones del PDF. **No se duplica ni se sustituye**: se empareja
+por el arranque del texto y se conserva con su URL, sus etiquetas y su
+enriquecimiento. Lo único que se le corrige es el titular, porque el guardado
+es el del número («#ISPE 870. 16 diciembre 2013») y no el del texto («Crimen
+–casi– sin castigo»). Las secciones restantes entran como piezas nuevas con
+`kind = 'seccion-pdf'`.
+
+El troceado no es heurístico: la maqueta usa familias tipográficas distintas
+para el texto y para el mobiliario (sumario, cabecera, créditos, pies), y el
+corte se hace por ahí. Se prueba sin PDF —que es material de pago y no se
+versiona— con `python -m pruebas.secciones_sinteticas`.
+
+Las secciones rescatadas entran **sin entidades ni citas verificadas**: para
+que la lente de entidades las vea hay que pasarlas por
+`python -m enriquecer.run` aparte.
+
 ## Esquema y consultas de tendencias
 
 Tablas: `publications` → `issues` → `articles` (con `authors[]`, `tags[]`,
@@ -203,7 +253,9 @@ scraper/parse.py       extracción (JSON-LD, OpenGraph, selectores WP)
 scraper/run.py         orquestador CLI reanudable
 scraper/inspect_page.py  depuración de una página concreta
 scraper/reparse.py     re-extrae desde el HTML ya descargado, sin volver a pedir
-scraper/pdfs.py        rescata el texto de los números publicados solo en PDF
+scraper/pdfs.py        descarga los PDF de cada número
+rescate/secciones.py   parte el PDF de un informe en sus secciones
+rescate/run.py         carga esas secciones y corrige los titulares genéricos
 db/schema.sql          esquema PostgreSQL (FTS en español + índices)
 db/load.py             carga idempotente de los JSONL a Railway
 db/diag.py             informe de calidad de los datos
