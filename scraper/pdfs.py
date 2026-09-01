@@ -38,12 +38,13 @@ SEP = "\x00PARR\x00"  # centinela interno para marcar separación de párrafos
 
 # --------------------------------------------------------------- utilidades
 def normalizar(s: str) -> tuple[str, list[int]]:
-    """Versión comparable de un texto (sin acentos, minúsculas, solo
-    alfanuméricos y espacios) junto al índice original de cada carácter,
-    para poder recortar después sobre el texto real."""
+    """Versión comparable de un texto: sin acentos, en minúsculas y SOLO
+    alfanuméricos, descartando espacios y puntuación. Se descartan porque la
+    extracción de PDF pierde o inventa espacios con frecuencia ("El bume rán"),
+    lo que impediría localizar los titulares. Devuelve además el índice
+    original de cada carácter, para recortar después sobre el texto real."""
     out: list[str] = []
     idx: list[int] = []
-    espacio = True
     for i, ch in enumerate(s):
         desc = unicodedata.normalize("NFKD", ch)
         desc = "".join(c for c in desc if not unicodedata.combining(c)).lower()
@@ -51,11 +52,6 @@ def normalizar(s: str) -> tuple[str, list[int]]:
             if c.isalnum():
                 out.append(c)
                 idx.append(i)
-                espacio = False
-            elif not espacio:
-                out.append(" ")
-                idx.append(i)
-                espacio = True
     return "".join(out), idx
 
 
@@ -94,16 +90,26 @@ def repartir(texto: str, articulos: list[dict]) -> dict[str, str]:
 
     norm, idx = normalizar(texto)
     posiciones = []
+    sin_localizar = []
     for art in articulos:
         titulo = (art.get("title") or "").strip()
-        if len(titulo) < 8:
-            continue
         ntit, _ = normalizar(titulo)
-        p = norm.find(ntit)
-        if p == -1 and len(ntit) > 40:      # reintento con el arranque del titular
-            p = norm.find(ntit[:40])
+        if len(ntit) < 10:          # titulares muy cortos darían falsos positivos
+            continue
+        p = -1
+        for corte in (len(ntit), 40, 30, 22):
+            if corte > len(ntit):
+                continue
+            p = norm.find(ntit[:corte])
+            if p != -1:
+                break
         if p != -1:
             posiciones.append((idx[p], art))
+        else:
+            sin_localizar.append(titulo)
+    if sin_localizar:
+        log.info("  sin localizar en el PDF: %s",
+                 "; ".join(t[:45] for t in sin_localizar[:4]))
 
     if not posiciones:
         return {}
@@ -194,6 +200,9 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Rescata texto desde los PDF de los números")
     ap.add_argument("--publication", action="append", help="slug (repetible)")
     ap.add_argument("--limit", type=int, default=0, help="máximo de números en esta ejecución")
+    ap.add_argument("--reintentar", action="store_true",
+                    help="olvida los intentos previos (pdf_rescued_at) de los "
+                         "artículos que siguen incompletos y vuelve a probarlos")
     ap.add_argument("--from-db", action="store_true",
                     help="lee los números pendientes de la base de datos y escribe en ella "
                          "el texto rescatado (para ejecuciones sin ficheros locales, p. ej. CI)")
@@ -219,6 +228,13 @@ def main(argv=None) -> int:
             log.error("%s", aviso)
             return 2
         asegurar_esquema(cfg.database_url)
+        if args.reintentar:
+            import psycopg
+            with psycopg.connect(cfg.database_url) as conn, conn.cursor() as cur:
+                cur.execute("UPDATE articles SET pdf_rescued_at = NULL "
+                            "WHERE NOT is_full AND pdf_rescued_at IS NOT NULL")
+                log.info("Reintentando %d artículos marcados previamente", cur.rowcount)
+                conn.commit()
         pendientes = pendientes_desde_db(cfg.database_url, pubs)
     else:
         issues = leer_jsonl(PARSED_DIR / "issues.jsonl")
