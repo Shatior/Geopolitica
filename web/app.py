@@ -65,6 +65,33 @@ def fecha_es(d: date) -> str:
     return f"{DIAS[d.weekday()]}, {d.day} de {MESES[d.month - 1]} de {d.year}"
 
 
+def agrupar_por_numero(articles: list[dict]) -> list[dict]:
+    """Junta bajo una sola cabecera las piezas seguidas del mismo número.
+
+    Un Informe Semanal se publica partido en cinco piezas, y en la lista
+    salían como cinco entradas repitiendo «Nº 1479 · 31 ago 2026». Solo se
+    agrupan las que llegan consecutivas: en el archivo vienen por fecha y caen
+    juntas, y en una búsqueda —ordenada por relevancia— así no se reordena
+    nada. Las piezas sin número no se agrupan entre sí, porque no consta que
+    pertenezcan al mismo sitio.
+
+    Un grupo puede quedar partido entre dos páginas. Se prefiere eso a tocar
+    la paginación, que cuenta piezas, que es lo que dice el total.
+    """
+    grupos: list[dict] = []
+    for a in articles:
+        clave = (a["pub_slug"], a["issue_id"])
+        if grupos and a["issue_id"] is not None and grupos[-1]["clave"] == clave:
+            grupos[-1]["piezas"].append(a)
+            continue
+        grupos.append({
+            "clave": clave, "pub_name": a["pub_name"],
+            "issue_number": a["issue_number"],
+            "published_date": a["published_date"], "piezas": [a],
+        })
+    return grupos
+
+
 def fecha_corta(d: date | None) -> str:
     return f"{d.day} {MESES[d.month - 1][:3]} {d.year}" if d else ""
 
@@ -269,7 +296,7 @@ def index(
         total = cur.fetchone()["n"]
         cur.execute(
             f"""SELECT a.id, a.title, a.published_date, a.tags, a.is_full,
-                       i.number AS issue_number,
+                       i.id AS issue_id, i.number AS issue_number,
                        p.slug AS pub_slug, p.name AS pub_name,
                        {snippet_sql} AS snippet
                 FROM articles a
@@ -284,7 +311,7 @@ def index(
 
     return templates.TemplateResponse(request, "resultados.html", {
         **ctx, "seccion": "archivo",
-        "articles": articles, "total": total, "page": page,
+        "grupos": agrupar_por_numero(articles), "total": total, "page": page,
         "pages": max(1, -(-total // PER_PAGE)),
         "q": q, "pub": pub, "year": year,
     })
