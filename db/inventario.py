@@ -246,6 +246,28 @@ def main() -> int:
             print(f"      «…{final.strip()}»")
             print(f"         — {(titulo or '')[:56]}")
 
+        # Las muestras anteriores acaban en titulares de OTROS artículos, lo
+        # que apunta a que el bloque de «relacionados» se está guardando
+        # dentro del cuerpo. Si es así contamina todos los recuentos, porque
+        # esas palabras se cuentan como si el análisis las hubiera dicho.
+        print("\n--- ¿QUÉ HAY AL FINAL DEL CUERPO? ---")
+        for slug in ("informe-semanal", "politica-exterior"):
+            for lo, hi in ((2009, 2020), (2021, 2026)):
+                cur.execute(f"""
+                    SELECT right(a.body, 190), a.title
+                      FROM articles a
+                      JOIN publications p ON p.id = a.publication_id
+                     WHERE p.slug = %s AND a.{SOLO}
+                       AND EXTRACT(YEAR FROM a.published_date) BETWEEN %s AND %s
+                       AND length(a.body) > 2000
+                     ORDER BY a.id DESC LIMIT 2
+                """, (slug, lo, hi))
+                for final, titulo in cur.fetchall():
+                    print(f"\n    {slug} {lo}-{hi} · {(titulo or '')[:48]}")
+                    for linea in final.strip().split("\n"):
+                        if linea.strip():
+                            print(f"      | {linea.strip()[:78]}")
+
         print("\n--- LONGITUD DE LOS ANÁLISIS ---")
         cur.execute(f"""
             SELECT p.slug,
