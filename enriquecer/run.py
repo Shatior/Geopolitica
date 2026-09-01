@@ -314,10 +314,10 @@ def muestra(conn, args) -> int:
             por_clase: dict[str, list[str]] = {}
             for r in cur.fetchall():
                 por_clase.setdefault(r["kind"], []).append(r["name"])
-            for clase in ("actor", "lugar", "tema"):
+            plurales = {"actor": "actores", "lugar": "lugares", "tema": "temas"}
+            for clase, etiqueta in plurales.items():
                 if por_clase.get(clase):
-                    print(f"  {clase + 'es' if clase == 'actor' else clase + 's':8} "
-                          f"{', '.join(por_clase[clase])}")
+                    print(f"  {etiqueta:8} {', '.join(por_clase[clase])}")
             cur.execute("""SELECT quote FROM article_expectations
                            WHERE article_id = %s LIMIT 2""", (a["id"],))
             for r in cur.fetchall():
