@@ -36,6 +36,11 @@ def main(argv=None) -> int:
     ap.add_argument("--pdf", help="ruta a un PDF suelto, descargado a mano")
     ap.add_argument("--publicacion", help="slug del PDF suelto")
     ap.add_argument("--numero", help="número del PDF suelto")
+    ap.add_argument("--solo-db", action="store_true",
+                    help="listar lo que guardamos de un número, sin PDF: sirve "
+                         "para comparar a mano contra el sumario del original")
+    ap.add_argument("--chars-pdf", type=int,
+                    help="caracteres del PDF, ya medidos en otra parte")
     args = ap.parse_args(argv)
 
     cfg = load_config()
@@ -43,6 +48,37 @@ def main(argv=None) -> int:
     if aviso:
         print(aviso)
         return 2
+
+    # Con el PDF medido en otro sitio, o sin PDF, basta el lado de la base de
+    # datos: la comparación la hace quien tenga el sumario delante.
+    if args.solo_db or args.chars_pdf:
+        if not (args.publicacion and args.numero):
+            print("Hace falta --publicacion y --numero.")
+            return 2
+        with psycopg.connect(cfg.database_url, row_factory=dict_row) as conn, \
+                conn.cursor() as cur:
+            cur.execute(
+                """SELECT a.title, length(coalesce(a.body, '')) AS chars, a.is_full
+                   FROM articles a
+                   JOIN issues i ON i.id = a.issue_id
+                   JOIN publications p ON p.id = i.publication_id
+                   WHERE p.slug = %s AND i.number = %s AND a.kind <> 'portada'
+                   ORDER BY chars DESC""",
+                (args.publicacion, args.numero))
+            arts = cur.fetchall()
+        if not arts:
+            print(f"No hay artículos de {args.publicacion} nº {args.numero}.")
+            return 1
+        print(f"{args.publicacion} nº {args.numero}: {len(arts)} artículos\n")
+        for a in arts:
+            marca = "" if a["is_full"] else "  (incompleto)"
+            print(f"  {a['chars']:7,}  {a['title'][:58]}{marca}")
+        total = sum(a["chars"] for a in arts)
+        print(f"\n  {total:7,}  TOTAL guardado")
+        if args.chars_pdf:
+            print(f"  {args.chars_pdf:7,}  TOTAL del PDF")
+            print(f"\n  El PDF tiene {args.chars_pdf/total:.1f}× lo que guardamos.")
+        return 0
 
     # Un PDF suelto basta para responder a la pregunta, y se puede descargar a
     # mano desde el navegador sin pedirle nada al sitio por programa.
