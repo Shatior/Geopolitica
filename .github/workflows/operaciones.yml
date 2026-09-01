@@ -19,6 +19,7 @@ on:
         options:
           - diagnostico      # informe de calidad de los datos (no toca nada)
           - mantenimiento    # aplica esquema y clasificaciones (no toca el sitio)
+          - inventario       # radiografía del corpus para diseñar análisis
           - scrapear         # busca números nuevos y los carga
           - pdfs             # rescata texto de los PDF de números incompletos
       publicacion:
@@ -67,7 +68,7 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Escribir cookies de sesión
-        if: inputs.operacion != 'diagnostico' && inputs.operacion != 'mantenimiento'
+        if: inputs.operacion == 'scrapear' || inputs.operacion == 'pdfs'
         env:
           PE_COOKIES: ${{ secrets.PE_COOKIES }}
         run: |
@@ -94,6 +95,9 @@ jobs:
           case "$OPERACION" in
             diagnostico)
               python -m db.diag | tee informe.txt
+              ;;
+            inventario)
+              python -m db.inventario | tee informe.txt
               ;;
             mantenimiento)
               python -m db.migrar | tee informe.txt
