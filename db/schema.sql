@@ -120,15 +120,50 @@ CREATE INDEX IF NOT EXISTS idx_entities_kind_name ON article_entities (kind, nam
 CREATE INDEX IF NOT EXISTS idx_entities_article   ON article_entities (article_id);
 CREATE INDEX IF NOT EXISTS idx_articles_enriched  ON articles (enriched_at);
 
--- Etiquetas derivadas de las entidades, para los análisis enriquecidos antes
--- de que se rellenara articles.tags. Idempotente: solo toca los que tienen
--- entidades y siguen sin etiquetas, así que puede ejecutarse siempre.
+-- Unificar variantes del mismo nombre. El modelo escribe unas veces «estrecho
+-- de Ormuz» y otras «Estrecho de Ormuz», y las lentes las contaban como dos
+-- entidades distintas: 17 análisis por un lado y 11 por otro en lugar de 28.
+-- Se agrupa ignorando mayúsculas y acentos, y gana la forma más frecuente.
+--
+-- Primero se borran las filas que chocarían: un análisis que mencione las dos
+-- variantes acabaría con dos filas idénticas, y la clave primaria lo impide.
+DELETE FROM article_entities e
+ USING (SELECT DISTINCT ON (kind, clave) kind, clave, name AS forma
+          FROM (SELECT kind, name,
+                       lower(translate(name, 'áéíóúüñÁÉÍÓÚÜÑ',
+                                             'aeiouunaeiouun')) AS clave,
+                       count(*) OVER (PARTITION BY kind, name) AS veces
+                  FROM article_entities) n
+         ORDER BY kind, clave, veces DESC, name) c
+ WHERE e.kind = c.kind
+   AND lower(translate(e.name, 'áéíóúüñÁÉÍÓÚÜÑ', 'aeiouunaeiouun')) = c.clave
+   AND e.name <> c.forma
+   AND EXISTS (SELECT 1 FROM article_entities x
+                WHERE x.article_id = e.article_id
+                  AND x.kind = e.kind AND x.name = c.forma);
+
+UPDATE article_entities e
+   SET name = c.forma
+  FROM (SELECT DISTINCT ON (kind, clave) kind, clave, name AS forma
+          FROM (SELECT kind, name,
+                       lower(translate(name, 'áéíóúüñÁÉÍÓÚÜÑ',
+                                             'aeiouunaeiouun')) AS clave,
+                       count(*) OVER (PARTITION BY kind, name) AS veces
+                  FROM article_entities) n
+         ORDER BY kind, clave, veces DESC, name) c
+ WHERE e.kind = c.kind
+   AND lower(translate(e.name, 'áéíóúüñÁÉÍÓÚÜÑ', 'aeiouunaeiouun')) = c.clave
+   AND e.name <> c.forma;
+
+-- Etiquetas derivadas de las entidades, que son la fuente de verdad. Se
+-- recalculan siempre, no solo cuando faltan, para que la unificación de arriba
+-- se refleje también en lo que muestra la web.
 UPDATE articles a
    SET tags = sub.etiquetas
   FROM (SELECT article_id,
-               (array_agg(name ORDER BY kind DESC, name))[1:10] AS etiquetas
+               (array_agg(DISTINCT name))[1:10] AS etiquetas
           FROM article_entities
          WHERE kind IN ('tema', 'lugar')
          GROUP BY article_id) sub
  WHERE a.id = sub.article_id
-   AND cardinality(a.tags) = 0;
+   AND a.tags IS DISTINCT FROM sub.etiquetas;
