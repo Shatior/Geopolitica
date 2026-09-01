@@ -120,7 +120,7 @@ jobs:
               ;;
             probar-pdf)
               python -m scraper.probar_pdf $PUB_ARG_LENTE \
-                --limite "${LIMITE:-3}" | tee informe.txt
+                --limite "${LIMITE:-3}" --comparar | tee informe.txt
               ;;
             muestras)
               python -m db.muestras --publicacion "${PUBLICACION:-informe-semanal}" \

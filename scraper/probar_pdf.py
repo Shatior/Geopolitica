@@ -38,6 +38,9 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Comprobar acceso a los PDF")
     ap.add_argument("--publicacion", default=None, help="slug; por defecto, ambas")
     ap.add_argument("--limite", type=int, default=3)
+    ap.add_argument("--comparar", action="store_true",
+                    help="pedir además el mismo documento SIN sesión, para "
+                         "averiguar qué significa el mensaje de aviso")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
 
@@ -77,6 +80,28 @@ def main(argv=None) -> int:
         print("→ Las cookies guardadas ya no valen. Hay que exportarlas de nuevo\n"
               "  desde un navegador con la sesión abierta y actualizar PE_COOKIES.")
     print()
+
+    # Sin sesión: si la respuesta anónima es exactamente el aviso que ve el
+    # navegador, entonces ese mensaje significa «no has iniciado sesión» y no
+    # «tu suscripción no cubre esto». Es la única forma de distinguirlos.
+    if args.comparar:
+        import requests
+        anon = requests.Session()
+        anon.headers.update(sess.session.headers)
+        print("SIN SESIÓN (como un visitante cualquiera):")
+        for n in numeros[:2]:
+            r = anon.get(n["pdf_url"], timeout=45, stream=True)
+            try:
+                inicio = next(r.iter_content(2048), b"")
+            finally:
+                r.close()
+            tipo = r.headers.get("Content-Type", "")
+            texto = inicio.decode("utf-8", "ignore").lower()
+            que = ("un PDF" if inicio[:5] == b"%PDF-" or "pdf" in tipo.lower()
+                   else f"el aviso «{AVISO}»" if AVISO in texto
+                   else f"otra cosa ({r.status_code}, {tipo[:30]})")
+            print(f"  nº {n['number']}: {r.status_code} → {que}")
+        print()
 
     ok = 0
     for n in numeros:
