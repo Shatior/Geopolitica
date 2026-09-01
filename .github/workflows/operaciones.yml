@@ -90,6 +90,9 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           # Se aceptan varios nombres: el secreto pudo crearse con cualquiera.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY || secrets.CLAUDE || secrets.CLAUDE_API_KEY || secrets.ANTHROPIC_KEY }}
+          # Solo lo exigen las claves vinculadas a identidad. Vale como secreto
+          # o como variable: no es un dato sensible, es un identificador.
+          ANTHROPIC_WORKSPACE_ID: ${{ secrets.ANTHROPIC_WORKSPACE_ID || vars.ANTHROPIC_WORKSPACE_ID }}
           OPERACION: ${{ inputs.operacion }}
           PUBLICACION: ${{ inputs.publicacion }}
           ANYOS: ${{ inputs.anyos }}

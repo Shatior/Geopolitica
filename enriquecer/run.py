@@ -43,6 +43,36 @@ def _conectar() -> str:
     return cfg.database_url
 
 
+def cliente():
+    """El cliente de Anthropic, con la cabecera de workspace si hace falta.
+
+    Una clave «vinculada a identidad» no basta por sí sola: la API exige saber
+    en qué workspace actúa la petición, y sin esa cabecera responde 400. Las
+    claves normales no la necesitan, así que solo se envía cuando está puesta.
+    """
+    import anthropic
+    ws = os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
+    cabeceras = {"anthropic-workspace-id": ws} if ws else None
+    return anthropic.Anthropic(default_headers=cabeceras)
+
+
+def explicar_400(exc) -> None:
+    """Traduce los rechazos de la API que tienen una causa accionable."""
+    mensaje = str(exc)
+    if "anthropic-workspace-id" in mensaje:
+        raise SystemExit(
+            "La clave está vinculada a una identidad y la API necesita saber en "
+            "qué workspace\nactúa. Falta ANTHROPIC_WORKSPACE_ID.\n\n"
+            "El identificador empieza por 'wrkspc_' y se ve en la consola de "
+            "Anthropic:\nSettings → Workspaces, o en la propia URL al abrir el "
+            "workspace.\nAñádelo en GitHub como secreto o variable "
+            "ANTHROPIC_WORKSPACE_ID.\n\n"
+            "Alternativa: usar una clave de API normal, que no lo necesita.\n"
+            "No se ha enviado nada ni se ha gastado nada."
+        )
+    raise
+
+
 def _clave() -> None:
     """Falla pronto y con una explicación, en vez de con una traza del SDK.
 
@@ -165,7 +195,10 @@ def enviar(conn, args) -> int:
                     **peticion(a["title"] or "", a["body"])))
         for a in arts
     ]
-    lote = anthropic.Anthropic().messages.batches.create(requests=peticiones)
+    try:
+        lote = cliente().messages.batches.create(requests=peticiones)
+    except anthropic.BadRequestError as exc:
+        explicar_400(exc)
 
     with conn.cursor() as cur:
         cur.execute(
@@ -182,8 +215,7 @@ def enviar(conn, args) -> int:
 
 def estado(conn, args) -> int:
     _clave()
-    import anthropic
-    cliente = anthropic.Anthropic()
+    cli = cliente()
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute("""SELECT id, created_at, n_requests, collected_at, n_ok, n_error
                        FROM enrichment_batches ORDER BY created_at""")
@@ -204,7 +236,7 @@ def estado(conn, args) -> int:
             print(f"  {l['id']}  recogido  {l['n_ok']} ok / {l['n_error']} con error")
             continue
         try:
-            b = cliente.messages.batches.retrieve(l["id"])
+            b = cli.messages.batches.retrieve(l["id"])
             c = b.request_counts
             print(f"  {l['id']}  {b.processing_status}  "
                   f"({c.succeeded} ok, {c.processing} en curso, {c.errored} error)")
@@ -215,8 +247,7 @@ def estado(conn, args) -> int:
 
 def recoger(conn, args) -> int:
     _clave()
-    import anthropic
-    cliente = anthropic.Anthropic()
+    cli = cliente()
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute("""SELECT id FROM enrichment_batches
                        WHERE collected_at IS NULL ORDER BY created_at""")
@@ -226,14 +257,14 @@ def recoger(conn, args) -> int:
         return 0
 
     for lote_id in lotes:
-        b = cliente.messages.batches.retrieve(lote_id)
+        b = cli.messages.batches.retrieve(lote_id)
         if b.processing_status != "ended":
             print(f"{lote_id}: todavía {b.processing_status}; se recogerá más tarde.")
             continue
         print(f"{lote_id}: terminado, guardando resultados…")
         ok = err = sin_json = citas_ok = citas_malas = 0
 
-        for res in cliente.messages.batches.results(lote_id):
+        for res in cli.messages.batches.results(lote_id):
             if not res.custom_id.startswith("art-"):
                 continue
             art_id = int(res.custom_id[4:])
