@@ -2,33 +2,52 @@
 {% block title %}{{ a.title }} — Geopolítica{% endblock %}
 {% block content %}
 
-<p class="backlink"><a href="javascript:history.back()">← Volver</a> · <a href="/">Portada</a></p>
+<div style="max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; padding-top: 32px">
+  <div class="kicker" style="text-align: center">
+    {{ a.pub_name }}{% if a.issue_number %} · Nº {{ a.issue_number }}{% endif %}{% if a.published_date %} · {{ fecha_corta(a.published_date) }}{% endif %}
+  </div>
+  <h1 style="font-family: var(--serif); font-weight: 900; font-size: clamp(26px, 3.6vw, 40px); line-height: 1.14; text-align: center; margin: 0">{{ a.title }}</h1>
+  {% if a.subtitle %}<p style="font-style: italic; font-size: 18px; line-height: 1.55; color: var(--texto-suave); text-align: center; margin: 0">{{ a.subtitle }}</p>{% endif %}
+  {% if a.authors %}<p class="meta" style="text-align: center; margin: 0">Por {{ a.authors | join(", ") }}</p>{% endif %}
+  <div style="display: flex; justify-content: center; flex-wrap: wrap; gap: 8px">
+    {% for t in a.tags %}<a class="etiqueta" href="/?q={{ t | urlencode }}">{{ t }}</a>{% endfor %}
+  </div>
 
-<div class="meta">
-  {{ a.pub_name }}
-  {% if a.issue_number %} · nº {{ a.issue_number }}{% endif %}
-  {% if a.published_date %} · {{ a.published_date.strftime("%d/%m/%Y") }}{% endif %}
-</div>
-<h1 style="font-size:1.6rem; line-height:1.3; margin:.3rem 0;">{{ a.title }}</h1>
-{% if a.subtitle %}<p class="meta" style="font-size:.95rem;">{{ a.subtitle }}</p>{% endif %}
-{% if a.authors %}<p class="meta">Por {{ a.authors | join(", ") }}</p>{% endif %}
-<div>
-  {% for t in a.tags %}<span class="tag">{{ t }}</span>{% endfor %}
+  <div style="height: 3px; border-top: 1px solid var(--tinta); border-bottom: 1px solid var(--tinta); margin: 12px 110px 4px"></div>
+
+  {% if not a.is_full %}
+  <p class="meta" style="text-align: center; color: var(--bronce)">Este análisis se guardó incompleto (época solo-PDF del archivo{% if a.pdf_url %}; el <a href="{{ a.pdf_url }}" rel="noopener">PDF del número</a> contiene el texto íntegro{% endif %}).</p>
+  {% endif %}
+
+  {% for p in paragraphs %}
+  <p style="font-size: 17px; line-height: 1.68; color: var(--texto); text-align: justify; hyphens: auto; margin: 0">{{ p }}</p>
+  {% endfor %}
+
+  <div class="meta" style="display: flex; justify-content: center; flex-wrap: wrap; gap: 20px; border-top: 1px solid var(--filete); padding-top: 14px; margin-top: 8px">
+    <a href="{{ a.url }}" rel="noopener">Original en politicaexterior.com</a>
+    {% if a.pdf_url %}<a href="{{ a.pdf_url }}" rel="noopener">PDF del número{% if a.issue_number %} {{ a.issue_number }}{% endif %}</a>{% endif %}
+    {% if a.scraped_at %}<span>guardado en el archivo el {{ a.scraped_at.strftime("%d/%m/%Y") }}</span>{% endif %}
+  </div>
 </div>
 
-{% if not a.is_full %}
-<p class="warn">⚠️ Este artículo se guardó incompleto (posible paywall en el momento del scraping).</p>
+{% if hermanos %}
+<hr class="filete" style="margin-top: 36px">
+<div style="padding-top: 16px; display: flex; flex-direction: column; gap: 14px">
+  <div class="meta" style="letter-spacing: .1em">TAMBIÉN EN {% if a.issue_number %}EL Nº {{ a.issue_number }}{% else %}ESTE NÚMERO{% endif %}</div>
+  <div class="grid-tres" style="display: grid; grid-template-columns: repeat({{ [hermanos | length, 4] | min }}, 1fr); gap: 0">
+    {% for h in hermanos %}
+    <div style="{% if not loop.first %}border-left: 1px solid var(--filete); padding-left: 24px;{% endif %} padding-right: 24px; display: flex; gap: 10px">
+      <span class="num-bronce" style="font-size: 19px">{{ loop.index }}.</span>
+      <a href="/articulo/{{ h.id }}" class="titulo-serif" style="font-size: 16px; line-height: 1.3; color: var(--tinta)">{{ h.title }}</a>
+    </div>
+    {% endfor %}
+  </div>
+</div>
 {% endif %}
 
-<div class="article-body">
-  {% for p in paragraphs %}<p>{{ p }}</p>{% endfor %}
+<div class="meta" style="display: flex; justify-content: space-between; gap: 20px; border-top: 1px solid var(--filete); padding-top: 14px; margin-top: 24px">
+  <span>{% if anterior %}<a href="/articulo/{{ anterior.id }}">← {{ anterior.title | truncate(60) }}</a>{% endif %}</span>
+  <span style="text-align: right">{% if siguiente %}<a href="/articulo/{{ siguiente.id }}">{{ siguiente.title | truncate(60) }} →</a>{% endif %}</span>
 </div>
-
-<hr style="border:none; border-top:1px solid var(--line); margin:2rem 0 1rem;">
-<p class="meta">
-  <a href="{{ a.url }}" rel="noopener">Original en politicaexterior.com</a>
-  {% if a.pdf_url %} · <a href="{{ a.pdf_url }}" rel="noopener">PDF del número</a>{% endif %}
-  {% if a.scraped_at %} · scrapeado {{ a.scraped_at.strftime("%d/%m/%Y") }}{% endif %}
-</p>
 
 {% endblock %}

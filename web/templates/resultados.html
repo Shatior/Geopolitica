@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ q or "Archivo" }} — Geopolítica{% endblock %}
+{% block content %}
+
+<p class="meta" style="padding-top: 18px">{{ total }} resultado{{ '' if total == 1 else 's' }}{% if q %} para «{{ q }}»{% endif %}{% if q %} · <a href="/tendencias?t1={{ q | urlencode }}">ver su evolución en tendencias →</a>{% endif %}</p>
+
+{% for a in articles %}
+<article style="padding: 20px 0; border-bottom: 1px solid var(--filete); display: flex; flex-direction: column; gap: 8px">
+  <div class="kicker" style="font-size: 11px">
+    {{ a.pub_name }}{% if a.issue_number %} · Nº {{ a.issue_number }}{% endif %}{% if a.published_date %} · {{ fecha_corta(a.published_date) }}{% endif %}
+    {% if not a.is_full %} <span style="color: var(--bronce)">· incompleto</span>{% endif %}
+  </div>
+  <h2 class="titulo-serif" style="font-size: 23px; line-height: 1.25; margin: 0"><a href="/articulo/{{ a.id }}" style="color: var(--tinta)">{{ a.title }}</a></h2>
+  {% if a.snippet %}<div style="font-size: 14.5px; line-height: 1.55; color: var(--texto-suave)">{{ a.snippet | safe if q else a.snippet }}{% if not q %}…{% endif %}</div>{% endif %}
+  <div style="display: flex; flex-wrap: wrap; gap: 6px">
+    {% for t in a.tags[:6] %}<a class="etiqueta" href="/?q={{ t | urlencode }}">{{ t }}</a>{% endfor %}
+  </div>
+</article>
+{% else %}
+<p style="padding-top: 20px">Sin resultados. Prueba con otros términos o quita filtros.</p>
+{% endfor %}
+
+{% if pages > 1 %}
+{% set qs = "q=" ~ (q | urlencode) ~ "&pub=" ~ pub ~ "&year=" ~ year %}
+<nav style="display: flex; justify-content: space-between; align-items: center; padding-top: 20px" class="meta">
+  <span>{% if page > 1 %}<a href="/?{{ qs }}&page={{ page - 1 }}">← Anteriores</a>{% endif %}</span>
+  <span>página {{ page }} de {{ pages }}</span>
+  <span>{% if page < pages %}<a href="/?{{ qs }}&page={{ page + 1 }}">Siguientes →</a>{% endif %}</span>
+</nav>
+{% endif %}
+
+{% endblock %}

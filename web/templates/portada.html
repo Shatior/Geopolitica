@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Geopolítica{% endblock %}
+{% block content %}
+
+{% if numero %}
+<div class="grid-portada" style="display: grid; grid-template-columns: 2fr 1fr; gap: 0; padding-top: 26px">
+  <div style="padding-right: 36px; display: flex; flex-direction: column; gap: 12px">
+    <div class="kicker">{{ numero.pub_name }}{% if numero.number %} · Nº {{ numero.number }}{% endif %}{% if numero.published_date %} · {{ fecha_corta(numero.published_date) }}{% endif %}</div>
+    {% if destacado %}
+    <h1 style="font-family: var(--serif); font-weight: 900; font-size: clamp(26px, 3.4vw, 40px); line-height: 1.12; margin: 0">
+      <a href="/articulo/{{ destacado.id }}" style="color: var(--tinta)">{{ destacado.title }}</a>
+    </h1>
+    <div style="font-size: 17px; line-height: 1.6; color: var(--texto)">{{ destacado.entradilla }}…</div>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
+      {% for t in destacado.tags[:4] %}<a class="etiqueta" href="/?q={{ t | urlencode }}">{{ t }}</a>{% endfor %}
+      <a href="/articulo/{{ destacado.id }}" class="meta" style="color: var(--prusia)">Seguir leyendo →</a>
+    </div>
+    {% endif %}
+  </div>
+
+  <div style="border-left: 1px solid var(--filete); padding-left: 28px; display: flex; flex-direction: column; gap: 14px">
+    <div class="meta" style="letter-spacing: .1em; border-bottom: 2px solid var(--tinta); padding-bottom: 8px; color: var(--tinta)">EN ESTE NÚMERO</div>
+    <div style="display: flex; flex-direction: column; gap: 12px; font-size: 15px">
+      {% for a in indice %}
+      <div style="display: flex; gap: 10px">
+        <span class="num-bronce">{{ loop.index }}.</span>
+        <a href="/articulo/{{ a.id }}" style="color: var(--tinta)">{{ a.title }}</a>
+      </div>
+      {% else %}
+      <span class="meta">Número de análisis único.</span>
+      {% endfor %}
+    </div>
+    <div class="meta" style="border-top: 1px solid var(--filete); padding-top: 12px; display: flex; flex-direction: column; gap: 4px">
+      {% if numero.pdf_url %}<a href="{{ numero.pdf_url }}" rel="noopener">PDF del número</a>{% endif %}
+      {% if previos %}<span>Número anterior: {{ previos[0].number or "—" }} · {{ fecha_corta(previos[0].published_date) }}</span>{% endif %}
+    </div>
+  </div>
+</div>
+
+<hr class="filete">
+<div class="grid-tres" style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; padding-top: 22px">
+  {% for pv in previos %}
+  <div style="{% if not loop.first %}border-left: 1px solid var(--filete); padding-left: 28px;{% endif %} padding-right: 28px; display: flex; flex-direction: column; gap: 8px">
+    <div class="kicker" style="font-size: 11px">{{ fecha_corta(pv.published_date) }}{% if pv.number %} · Nº {{ pv.number }}{% endif %}</div>
+    <div class="titulo-serif" style="font-size: 21px; line-height: 1.25"><a href="/articulo/{{ pv.id }}" style="color: var(--tinta)">{{ pv.title }}</a></div>
+    <div style="font-size: 14px; line-height: 1.55; color: var(--texto-suave)">{{ pv.entradilla }}…</div>
+  </div>
+  {% endfor %}
+  {% if tendencia %}
+  <div style="border-left: 1px solid var(--filete); padding-left: 28px; display: flex; flex-direction: column; gap: 8px">
+    <div class="kicker-bronce">Tendencia de la semana</div>
+    <div class="titulo-serif" style="font-size: 21px; line-height: 1.25"><a href="/tendencias?t1={{ tendencia.tema | urlencode }}" style="color: var(--tinta)">«{{ tendencia.tema }}» en el archivo</a></div>
+    {{ tendencia.svg | safe }}
+    <div class="meta">{{ tendencia.total }} menciones · {{ tendencia.desde }} – {{ tendencia.hasta }}</div>
+  </div>
+  {% endif %}
+</div>
+{% else %}
+<p style="padding-top: 30px">La base de datos está vacía. Ejecuta el scraper y <code>db.load</code>.</p>
+{% endif %}
+
+{% endblock %}

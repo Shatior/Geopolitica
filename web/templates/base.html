@@ -5,79 +5,116 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <title>{% block title %}Geopolítica{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=Lora:ital,wght@0,400;0,500;1,400;1,500&display=swap">
 <style>
 :root {
-  --bg: #faf9f6; --fg: #1c1c1c; --muted: #6b6b6b; --line: #e3e0d8;
-  --accent: #8b1d2c; --card: #ffffff; --mark: #f5e2a8;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #16181c; --fg: #e8e6e1; --muted: #9a9890; --line: #2c2f36;
-    --accent: #e0687a; --card: #1e2127; --mark: #5c4d1e;
-  }
+  --papel: #f1f2ee;
+  --carta: #f8f8f4;
+  --tinta: #17202b;
+  --prusia: #1f3f66;
+  --prusia-oscuro: #16294a;
+  --bronce: #a9772c;
+  --gris: #5d6672;
+  --gris-claro: #79828d;
+  --borde: #b9c0c6;
+  --filete: #d3d8da;
+  --texto: #2b333d;
+  --texto-suave: #3d4650;
+  --serif: 'Playfair Display', Georgia, serif;
+  --lectura: Lora, Georgia, serif;
+  --ui: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 * { box-sizing: border-box; }
 body {
-  margin: 0; background: var(--bg); color: var(--fg);
-  font: 16px/1.6 Georgia, "Times New Roman", serif;
+  margin: 0; background: var(--papel);
+  background-image: repeating-linear-gradient(0deg, rgba(23,32,43,0.03) 0px, rgba(23,32,43,0.03) 1px, transparent 1px, transparent 4px);
+  color: var(--tinta); font: 16px/1.6 var(--lectura);
 }
-header.site {
-  border-bottom: 3px double var(--line); padding: 1.2rem 1rem .8rem;
-  text-align: center;
+a { color: var(--prusia); text-decoration: none; }
+a:hover { color: var(--prusia-oscuro); text-decoration: underline; }
+mark { background: rgba(169,119,44,0.22); color: inherit; padding: 0 .08em; }
+.contenedor { max-width: 1200px; margin: 0 auto; padding: 0 28px 56px; }
+
+/* Masthead */
+.fecha-linea { display: flex; justify-content: space-between; padding-top: 22px; font-family: var(--ui); font-size: 12px; color: var(--gris); }
+.masthead { text-align: center; padding: 8px 0 12px; border-bottom: 1px solid var(--tinta); }
+.masthead a { color: var(--tinta); font-family: var(--serif); font-weight: 900; font-size: clamp(30px, 5vw, 50px); letter-spacing: .1em; }
+.masthead a:hover { text-decoration: none; }
+.filete-doble { height: 3px; border-top: 1px solid var(--tinta); border-bottom: 1px solid var(--tinta); margin-top: 2px; }
+
+/* Barra de búsqueda/nav */
+.barra { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--filete); padding: 10px 4px; flex-wrap: wrap; }
+.barra form { display: flex; align-items: center; gap: 10px; flex: 1 1 260px; }
+.barra input[type=search] {
+  flex: 1; border: none; background: transparent; font: italic 15px var(--lectura);
+  color: var(--tinta); outline: none; min-width: 120px;
 }
-header.site h1 { margin: 0; font-size: 1.6rem; letter-spacing: .04em; }
-header.site h1 a { color: var(--fg); text-decoration: none; }
-header.site .sub { color: var(--muted); font-size: .85rem; font-family: system-ui, sans-serif; }
-main { max-width: 46rem; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
-a { color: var(--accent); }
-mark { background: var(--mark); color: inherit; padding: 0 .1em; }
-.meta { color: var(--muted); font-size: .8rem; font-family: system-ui, sans-serif; }
-.tag {
-  display: inline-block; border: 1px solid var(--line); border-radius: 999px;
-  padding: 0 .6em; margin: 0 .25em .25em 0; font-size: .75rem;
-  font-family: system-ui, sans-serif; color: var(--muted); text-decoration: none;
+.barra input::placeholder { color: var(--gris-claro); }
+.barra select {
+  border: 1px solid var(--borde); background: var(--carta); color: var(--gris);
+  font-family: var(--ui); font-size: 12.5px; padding: 5px 8px;
 }
-form.filters {
-  display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1.5rem;
-  font-family: system-ui, sans-serif;
+.barra button {
+  border: 1px solid var(--prusia); background: var(--prusia); color: #f3f4f0;
+  font-family: var(--ui); font-size: 12.5px; padding: 6px 16px; cursor: pointer;
 }
-form.filters input[type=search] {
-  flex: 1 1 14rem; padding: .5em .8em; border: 1px solid var(--line);
-  border-radius: 6px; background: var(--card); color: var(--fg); font-size: .95rem;
-}
-form.filters select, form.filters button {
-  padding: .5em .8em; border: 1px solid var(--line); border-radius: 6px;
-  background: var(--card); color: var(--fg); font-size: .9rem;
-}
-form.filters button { background: var(--accent); color: #fff; border-color: var(--accent); cursor: pointer; }
-article.card {
-  background: var(--card); border: 1px solid var(--line); border-radius: 8px;
-  padding: 1rem 1.2rem; margin-bottom: 1rem;
-}
-article.card h2 { margin: .1rem 0 .3rem; font-size: 1.15rem; line-height: 1.35; }
-article.card h2 a { color: var(--fg); text-decoration: none; }
-article.card h2 a:hover { color: var(--accent); }
-article.card .snippet { margin: .3rem 0 .5rem; font-size: .92rem; }
-nav.pager {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-top: 1.5rem; font-family: system-ui, sans-serif; font-size: .9rem;
-}
-.article-body { margin-top: 1.5rem; }
-.article-body p { margin: 0 0 1em; text-align: justify; hyphens: auto; }
-.backlink { font-family: system-ui, sans-serif; font-size: .85rem; }
-.warn {
-  background: var(--mark); border-radius: 6px; padding: .5em .8em;
-  font-family: system-ui, sans-serif; font-size: .85rem;
+.nav-enlaces { margin-left: auto; display: flex; gap: 18px; font-family: var(--ui); font-size: 12.5px; color: var(--gris); }
+.nav-enlaces a { color: var(--gris); }
+.nav-enlaces a.activo { color: var(--tinta); border-bottom: 2px solid var(--prusia); padding-bottom: 2px; }
+.nav-enlaces a:hover { text-decoration: none; color: var(--tinta); }
+
+/* Piezas editoriales */
+.kicker { font-family: var(--ui); font-size: 12px; letter-spacing: .08em; color: var(--prusia); text-transform: uppercase; }
+.kicker-bronce { font-family: var(--ui); font-size: 11px; letter-spacing: .08em; color: var(--bronce); text-transform: uppercase; }
+.titulo-serif { font-family: var(--serif); font-weight: 700; }
+.etiqueta { display: inline-block; border: 1px solid var(--borde); padding: 2px 10px; font-family: var(--ui); font-size: 11.5px; color: var(--gris); }
+a.etiqueta:hover { text-decoration: none; border-color: var(--prusia); color: var(--prusia); }
+.meta { font-family: var(--ui); font-size: 12.5px; color: var(--gris); }
+.caja { background: var(--carta); border: 1px solid var(--borde); }
+.num-bronce { font-family: var(--serif); font-weight: 700; color: var(--bronce); }
+hr.filete { border: none; border-top: 1px solid var(--tinta); margin: 28px 0 0; }
+
+@media (max-width: 860px) {
+  .contenedor { padding: 0 16px 40px; }
+  .grid-portada, .grid-tres, .grid-dos { grid-template-columns: 1fr !important; }
+  .grid-portada > *, .grid-tres > *, .grid-dos > * { border-left: none !important; padding-left: 0 !important; padding-right: 0 !important; }
+  .oculta-movil { display: none; }
 }
 </style>
+{% block head %}{% endblock %}
 </head>
 <body>
-<header class="site">
-  <h1><a href="/">Geopolítica</a></h1>
-  <div class="sub">Hemeroteca de Política Exterior — uso personal</div>
-</header>
-<main>
-{% block content %}{% endblock %}
-</main>
+<div class="contenedor">
+  <div class="fecha-linea">
+    <span>{{ hoy }}</span>
+    <span class="oculta-movil">{{ stats.total }} análisis · {{ stats.issues }} números · {{ stats.desde.year if stats.desde else "" }}–{{ stats.hasta.year if stats.hasta else "" }}</span>
+  </div>
+  <div class="masthead"><a href="/">GEOPOLÍTICA</a></div>
+  <div class="filete-doble"></div>
+
+  <div class="barra">
+    <form method="get" action="/">
+      <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#5d6672" stroke-width="1.8"><circle cx="9" cy="9" r="6"></circle><path d="M13.5 13.5 L18 18"></path></svg>
+      <input type="search" name="q" value="{{ q or '' }}" placeholder="Buscar en la hemeroteca…">
+      <select name="pub">
+        <option value="">Todas las publicaciones</option>
+        {% for p in pubs %}<option value="{{ p.slug }}" {% if p.slug == pub %}selected{% endif %}>{{ p.name }}</option>{% endfor %}
+      </select>
+      <select name="year">
+        <option value="0">Todos los años</option>
+        {% for y in years %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+      </select>
+      <button type="submit">Buscar</button>
+    </form>
+    <nav class="nav-enlaces">
+      <a href="/" class="{{ 'activo' if seccion == 'archivo' else '' }}">Archivo</a>
+      <a href="/tendencias" class="{{ 'activo' if seccion == 'tendencias' else '' }}">Tendencias</a>
+    </nav>
+  </div>
+
+  {% block content %}{% endblock %}
+</div>
 </body>
 </html>

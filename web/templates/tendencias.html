@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Tendencias — Geopolítica{% endblock %}
+{% block content %}
+
+<div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; padding-top: 26px">
+  <div style="display: flex; flex-direction: column; gap: 4px">
+    <h1 style="font-family: var(--serif); font-weight: 900; font-size: 30px; margin: 0">Panel de tendencias</h1>
+    <div class="meta">frecuencia de temas en {{ stats.total }} análisis · {{ stats.desde.year if stats.desde }} – {{ stats.hasta.year if stats.hasta }}</div>
+  </div>
+  <form method="get" action="/tendencias" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap">
+    <span style="display: flex; align-items: center; gap: 7px" class="caja meta">
+      <span style="width: 10px; height: 10px; background: var(--prusia); margin-left: 10px"></span>
+      <input type="text" name="t1" value="{{ t1 }}" placeholder="término, p. ej. Sahel" style="border: none; background: transparent; font-family: var(--ui); font-size: 12.5px; padding: 8px 10px 8px 0; outline: none; width: 150px">
+    </span>
+    <span style="display: flex; align-items: center; gap: 7px" class="caja meta">
+      <span style="width: 10px; height: 10px; background: var(--bronce); margin-left: 10px"></span>
+      <input type="text" name="t2" value="{{ t2 }}" placeholder="comparar con…" style="border: none; background: transparent; font-family: var(--ui); font-size: 12.5px; padding: 8px 10px 8px 0; outline: none; width: 150px">
+    </span>
+    <button type="submit" style="border: 1px solid var(--prusia); background: var(--prusia); color: #f3f4f0; font-family: var(--ui); font-size: 12.5px; padding: 8px 18px; cursor: pointer">Trazar</button>
+  </form>
+</div>
+
+{% if chart %}
+<div class="caja" style="margin-top: 18px; padding: 20px 24px 14px; display: flex; flex-direction: column; gap: 8px">
+  <div class="titulo-serif" style="font-size: 20px">
+    {% for tt in totales %}<span style="color: {{ tt.color }}">«{{ tt.term }}»</span>{% if not loop.last %} frente a {% endif %}{% endfor %}
+  </div>
+  <div class="meta" style="font-size: 12px">análisis que mencionan cada término, por año</div>
+  {{ chart | safe }}
+</div>
+{% else %}
+<div class="caja" style="margin-top: 18px; padding: 28px 24px; text-align: center">
+  <div class="titulo-serif" style="font-size: 20px">Traza la evolución de cualquier tema</div>
+  <div class="meta" style="padding-top: 6px">Escribe un término arriba (o dos, para compararlos). Ejemplos:
+    <a href="/tendencias?t1=Sahel&t2=mar+Rojo">Sahel vs mar Rojo</a> ·
+    <a href="/tendencias?t1=China&t2=Estados+Unidos">China vs Estados Unidos</a> ·
+    <a href="/tendencias?t1=Ucrania">Ucrania</a>
+  </div>
+</div>
+{% endif %}
+
+<div class="grid-dos" style="display: grid; grid-template-columns: 1fr 1fr; gap: 28px; padding-top: 26px">
+  {% if temas %}
+  <div class="caja" style="padding: 20px 24px; display: flex; flex-direction: column; gap: 14px">
+    <div class="titulo-serif" style="font-size: 18px">Temas más etiquetados en {{ anyo_actual }}</div>
+    <div style="display: flex; flex-direction: column; gap: 10px; font-family: var(--ui); font-size: 13px">
+      {% for t in temas %}
+      <div style="display: grid; grid-template-columns: 140px 1fr 40px; gap: 12px; align-items: center">
+        <a href="/tendencias?t1={{ t.tag | urlencode }}" style="color: var(--tinta)">{{ t.tag }}</a>
+        <div style="height: 12px; background: #e4e6e1"><div style="width: {{ (t.n * 100 / max_tema) | round }}%; height: 12px; background: var(--prusia)"></div></div>
+        <span style="text-align: right; color: var(--gris)">{{ t.n }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if relevantes %}
+  <div class="caja" style="padding: 20px 24px; display: flex; flex-direction: column; gap: 4px">
+    <div class="titulo-serif" style="font-size: 18px; padding-bottom: 8px">Análisis más relevantes: «{{ terms[0] }}»</div>
+    {% for r in relevantes %}
+    <div style="display: flex; gap: 14px; padding: 9px 0; border-top: 1px solid var(--filete); align-items: baseline">
+      <span class="meta" style="font-size: 11.5px; min-width: 82px">{{ fecha_corta(r.published_date) }}</span>
+      <a href="/articulo/{{ r.id }}" class="titulo-serif" style="font-size: 15.5px; color: var(--tinta)">{{ r.title }}</a>
+    </div>
+    {% endfor %}
+    <div class="meta" style="padding-top: 8px"><a href="/?q={{ terms[0] | urlencode }}">Ver todos los resultados en el archivo →</a></div>
+  </div>
+  {% endif %}
+</div>
+
+{% if totales %}
+<div class="meta" style="display: flex; gap: 30px; flex-wrap: wrap; padding-top: 20px; border-top: 1px solid var(--tinta); margin-top: 26px">
+  {% for tt in totales %}
+  <span><strong style="color: var(--bronce); font-size: 15px">{{ tt.n }}</strong> menciones «{{ tt.term }}»</span>
+  {% endfor %}
+  <span style="margin-left: auto">datos en vivo desde PostgreSQL · actualizado cada semana</span>
+</div>
+{% endif %}
+
+{% endblock %}
