@@ -99,6 +99,35 @@ python -m db.load
 Repite `scraper.run` + `db.load` cuando quieras incorporar los números nuevos
 de cada semana (solo descargará lo que falte).
 
+## Operar sin el PC: GitHub Actions contra la base de datos
+
+Tras el backfill inicial, **la base de datos de Railway es la fuente de verdad**
+y las operaciones se ejecutan en GitHub, no en local. El workflow
+`.github/workflows/operaciones.yml` se lanza a mano desde **Actions →
+operaciones → Run workflow** (o desde una sesión de Claude Code) y ofrece:
+
+| operación | qué hace |
+|---|---|
+| `diagnostico` | informe de calidad de los datos; no modifica nada |
+| `scrapear` | busca números nuevos, los carga en Railway y diagnostica |
+| `pdfs` | rescata el texto de los números incompletos desde su PDF |
+
+Parámetros: `publicacion`, `anyos` (p. ej. `2026` o `2024-2026`), `limite`
+(0 = sin límite) y `reintentar` (solo en `pdfs`: vuelve a probar números ya
+intentados, útil tras mejorar la extracción).
+
+Secretos necesarios (**Settings → Secrets and variables → Actions**):
+
+- `DATABASE_URL`: la **`DATABASE_PUBLIC_URL`** de Railway (la de
+  `*.proxy.rlwy.net`). ⚠️ La variable `DATABASE_URL` que Railway muestra por
+  defecto apunta a un host interno que solo resuelve dentro de Railway: sirve
+  para el servicio web, pero no para GitHub ni para tu PC.
+- `PE_COOKIES`: el contenido íntegro de tu `data/cookies.txt`.
+
+Las operaciones que tocan la base (`pdfs --from-db`) aplican el esquema por su
+cuenta y son reanudables: los artículos ya intentados quedan marcados en
+`articles.pdf_rescued_at` y no se vuelven a descargar.
+
 ## Actualización semanal automática (GitHub Actions)
 
 El backfill histórico se hace una vez desde tu PC; el mantenimiento lo hace
@@ -173,6 +202,10 @@ scraper/session.py     sesión HTTP educada (auth, throttling, backoff)
 scraper/parse.py       extracción (JSON-LD, OpenGraph, selectores WP)
 scraper/run.py         orquestador CLI reanudable
 scraper/inspect_page.py  depuración de una página concreta
+scraper/reparse.py     re-extrae desde el HTML ya descargado, sin volver a pedir
+scraper/pdfs.py        rescata el texto de los números publicados solo en PDF
 db/schema.sql          esquema PostgreSQL (FTS en español + índices)
 db/load.py             carga idempotente de los JSONL a Railway
+db/diag.py             informe de calidad de los datos
+web/                   hemeroteca web (FastAPI + Jinja)
 ```
