@@ -82,6 +82,32 @@ def main() -> int:
         cur.execute(f"SELECT count(DISTINCT tag) FROM (SELECT unnest(tags) AS tag FROM articles WHERE {SOLO}) t")
         print(f"  → {cur.fetchone()[0]} etiquetas distintas en total")
 
+        # Cuántas piezas trae cada número. El sitio publica el Informe Semanal
+        # partido en secciones, y si esa cifra cambia con los años no estamos
+        # comparando lo mismo: un año con una sola pieza por número puede
+        # significar que del informe solo se capturó una parte.
+        print("\n--- PIEZAS POR NÚMERO (¿está el informe entero?) ---")
+        cur.execute(f"""
+            SELECT p.slug,
+                   EXTRACT(YEAR FROM i.published_date)::int AS anyo,
+                   count(DISTINCT i.id) AS numeros,
+                   count(*) AS piezas,
+                   round(count(*)::numeric / count(DISTINCT i.id), 1) AS por_numero
+              FROM articles a
+              JOIN issues i ON i.id = a.issue_id
+              JOIN publications p ON p.id = i.publication_id
+             WHERE a.{SOLO} AND i.published_date IS NOT NULL
+             GROUP BY 1, 2 ORDER BY 1, 2
+        """)
+        actual = None
+        for slug, anyo, numeros, piezas, por in cur.fetchall():
+            if slug != actual:
+                print(f"  {slug}")
+                actual = slug
+            aviso = "   <-- una sola pieza" if por < 1.5 else ""
+            print(f"    {anyo}  {numeros:4} nums {piezas:5} piezas "
+                  f"{por:5} por num{aviso}")
+
         print("\n--- LONGITUD DE LOS ANÁLISIS ---")
         cur.execute(f"""
             SELECT p.slug,
