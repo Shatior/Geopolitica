@@ -21,6 +21,7 @@ on:
           - mantenimiento    # aplica esquema y clasificaciones (no toca el sitio)
           - inventario       # radiografía del corpus para diseñar análisis
           - lentes           # ejecuta las lentes de análisis (sin coste de IA)
+          - muestras         # imprime textos de ejemplo por año, para leerlos
           - scrapear         # busca números nuevos y los carga
           - pdfs             # rescata texto de los PDF de números incompletos
       publicacion:
@@ -104,6 +105,10 @@ jobs:
               ;;
             lentes)
               python -m agentes.run $PUB_ARG_LENTE | tee informe.txt
+              ;;
+            muestras)
+              python -m db.muestras --publicacion "${PUBLICACION:-informe-semanal}" \
+                --anyos "${ANYOS:-2019,2023,2026}" | tee informe.txt
               ;;
             mantenimiento)
               python -m db.migrar | tee informe.txt
