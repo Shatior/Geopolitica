@@ -23,6 +23,11 @@ on:
           - lentes           # ejecuta las lentes de análisis (sin coste de IA)
           - muestras         # imprime textos de ejemplo por año, para leerlos
           - probar-pdf       # comprueba si la suscripción da acceso a los PDF
+          - enriquecer-estimar   # cuánto costaría enriquecer lo pendiente (gratis)
+          - enriquecer-enviar    # CUESTA DINERO: manda un lote a Haiku
+          - enriquecer-estado    # cómo va el lote en curso
+          - enriquecer-recoger   # guarda los resultados del lote terminado
+          - enriquecer-muestra   # enseña lo extraído, para juzgar la calidad
           - scrapear         # busca números nuevos y los carga
           - pdfs             # rescata texto de los PDF de números incompletos
       publicacion:
@@ -83,6 +88,7 @@ jobs:
         env:
           PE_COOKIES_FILE: data/cookies.txt
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPERACION: ${{ inputs.operacion }}
           PUBLICACION: ${{ inputs.publicacion }}
           ANYOS: ${{ inputs.anyos }}
@@ -106,6 +112,10 @@ jobs:
               ;;
             lentes)
               python -m agentes.run $PUB_ARG_LENTE | tee informe.txt
+              ;;
+            enriquecer-*)
+              python -m enriquecer.run "${OPERACION#enriquecer-}" \
+                $PUB_ARG_LENTE --limite "${LIMITE:-0}" | tee informe.txt
               ;;
             probar-pdf)
               python -m scraper.probar_pdf $PUB_ARG_LENTE \

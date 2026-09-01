@@ -72,3 +72,50 @@ CREATE INDEX IF NOT EXISTS idx_issues_pub_number  ON issues (publication_id, num
 --   FROM articles
 --   WHERE published_date BETWEEN '2023-01-01' AND '2023-12-31'
 --   GROUP BY autor ORDER BY count(*) DESC LIMIT 20;
+
+-- ---------------------------------------------------------------------------
+-- Enriquecimiento: lo que un modelo de lenguaje extrae de cada análisis.
+--
+-- Las lentes estadísticas miden bien nombres propios («Biden», «Ormuz») pero se
+-- enturbian con vocabulario suelto, porque una palabra no es un actor ni un
+-- tema. Aquí se guarda esa capa: quién actúa, dónde, sobre qué, y qué se
+-- afirmó sobre el futuro. El modelo solo nombra; contar sigue siendo cosa del
+-- código.
+-- ---------------------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS article_entities (
+    article_id  INT  NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,          -- actor | lugar | tema
+    name        TEXT NOT NULL,
+    PRIMARY KEY (article_id, kind, name)
+);
+
+-- Afirmaciones sobre el futuro, citadas literalmente del análisis. Alimentan
+-- al auditor de pronósticos: solo se guardan las que se han podido verificar
+-- palabra por palabra contra el cuerpo del texto.
+CREATE TABLE IF NOT EXISTS article_expectations (
+    id          SERIAL PRIMARY KEY,
+    article_id  INT  NOT NULL REFERENCES articles(id) ON DELETE CASCADE,
+    quote       TEXT NOT NULL,
+    UNIQUE (article_id, quote)
+);
+
+-- Un lote de la Batch API tarda hasta 24 horas, más de lo que dura una
+-- ejecución cómoda: se anota aquí para poder recoger el resultado más tarde,
+-- incluso desde otra máquina.
+CREATE TABLE IF NOT EXISTS enrichment_batches (
+    id           TEXT PRIMARY KEY,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    model        TEXT NOT NULL,
+    n_requests   INT  NOT NULL,
+    collected_at TIMESTAMPTZ,
+    n_ok         INT,
+    n_error      INT
+);
+
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS enriched_at      TIMESTAMPTZ;
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS enrichment_model TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_entities_kind_name ON article_entities (kind, name);
+CREATE INDEX IF NOT EXISTS idx_entities_article   ON article_entities (article_id);
+CREATE INDEX IF NOT EXISTS idx_articles_enriched  ON articles (enriched_at);
