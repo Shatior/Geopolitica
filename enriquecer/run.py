@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -40,6 +41,24 @@ def _conectar() -> str:
     if aviso:
         raise SystemExit(aviso)
     return cfg.database_url
+
+
+def _clave() -> None:
+    """Falla pronto y con una explicación, en vez de con una traza del SDK.
+
+    Sin clave, la biblioteca de Anthropic lanza un TypeError sobre cabeceras
+    que no dice nada a quien solo quería enriquecer su archivo.
+    """
+    if os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        return
+    raise SystemExit(
+        "Falta la clave de la API de Anthropic.\n"
+        "El runner recibe ANTHROPIC_API_KEY vacía, así que el secreto no existe "
+        "en el repositorio\no tiene otro nombre. En GitHub: Settings → Secrets "
+        "and variables → Actions,\ny compruébalo. El workflow acepta que se "
+        "llame ANTHROPIC_API_KEY, CLAUDE_API_KEY\no ANTHROPIC_KEY.\n"
+        "No se ha enviado nada ni se ha gastado nada."
+    )
 
 
 def _esquema(conn) -> None:
@@ -127,6 +146,7 @@ def estimar(conn, args) -> int:
 
 
 def enviar(conn, args) -> int:
+    _clave()
     import anthropic
     from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
     from anthropic.types.messages.batch_create_params import Request
@@ -161,6 +181,7 @@ def enviar(conn, args) -> int:
 
 
 def estado(conn, args) -> int:
+    _clave()
     import anthropic
     cliente = anthropic.Anthropic()
     with conn.cursor(row_factory=dict_row) as cur:
@@ -193,6 +214,7 @@ def estado(conn, args) -> int:
 
 
 def recoger(conn, args) -> int:
+    _clave()
     import anthropic
     cliente = anthropic.Anthropic()
     with conn.cursor(row_factory=dict_row) as cur:
