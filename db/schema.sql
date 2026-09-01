@@ -41,6 +41,10 @@ CREATE TABLE IF NOT EXISTS articles (
     ) STORED
 );
 
+-- Marca de que ya se intentó rescatar el texto desde el PDF del número,
+-- para no volver a descargarlo en cada ejecución.
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS pdf_rescued_at TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS idx_articles_tsv       ON articles USING GIN (tsv);
 CREATE INDEX IF NOT EXISTS idx_articles_tags      ON articles USING GIN (tags);
 CREATE INDEX IF NOT EXISTS idx_articles_date      ON articles (published_date);

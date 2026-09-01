@@ -120,11 +120,72 @@ def leer_jsonl(path) -> list[dict]:
     return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
 
 
+
+# ------------------------------------------------------- origen: base de datos
+def pendientes_desde_db(database_url: str, pubs: set[str]) -> list[tuple[dict, list[dict]]]:
+    """Números con al menos un artículo incompleto y PDF disponible, leídos de
+    la base de datos. Es naturalmente reanudable: al marcar los artículos como
+    completos dejan de aparecer aquí."""
+    import psycopg
+    from psycopg.rows import dict_row
+
+    out: list[tuple[dict, list[dict]]] = []
+    with psycopg.connect(database_url, row_factory=dict_row) as conn, conn.cursor() as cur:
+        cur.execute(
+            """SELECT i.id, i.url, i.number, i.pdf_url, p.slug AS publication
+               FROM issues i JOIN publications p ON p.id = i.publication_id
+               WHERE i.pdf_url IS NOT NULL AND p.slug = ANY(%s)
+                 AND EXISTS (SELECT 1 FROM articles a
+                             WHERE a.issue_id = i.id AND NOT a.is_full
+                               AND a.pdf_rescued_at IS NULL)
+               ORDER BY i.published_date DESC NULLS LAST""",
+            (list(pubs),),
+        )
+        numeros = cur.fetchall()
+        for iss in numeros:
+            cur.execute(
+                """SELECT url, title, coalesce(body, '') AS body, is_full
+                   FROM articles WHERE issue_id = %s ORDER BY id""",
+                (iss["id"],),
+            )
+            out.append((iss, cur.fetchall()))
+    return out
+
+
+def guardar_en_db(database_url: str, registros: list[dict],
+                  intentadas: list[str] | None = None) -> None:
+    """Escribe el texto rescatado en la base de datos y deja constancia del
+    intento en todos los artículos del número, incluidos aquellos para los que
+    el PDF no aportó texto: así no se vuelven a descargar en cada ejecución."""
+    import psycopg
+
+    if not registros and not intentadas:
+        return
+    with psycopg.connect(database_url) as conn, conn.cursor() as cur:
+        for rec in registros:
+            cur.execute(
+                """UPDATE articles
+                   SET body = %s, is_full = %s, pdf_rescued_at = now()
+                   WHERE url = %s""",
+                (rec["body"], rec["is_full"], rec["url"]),
+            )
+        if intentadas:
+            cur.execute(
+                """UPDATE articles SET pdf_rescued_at = now()
+                   WHERE url = ANY(%s) AND pdf_rescued_at IS NULL""",
+                (list(intentadas),),
+            )
+        conn.commit()
+
+
 # -------------------------------------------------------------------- main
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="Rescata texto desde los PDF de los números")
     ap.add_argument("--publication", action="append", help="slug (repetible)")
     ap.add_argument("--limit", type=int, default=0, help="máximo de números en esta ejecución")
+    ap.add_argument("--from-db", action="store_true",
+                    help="lee los números pendientes de la base de datos y escribe en ella "
+                         "el texto rescatado (para ejecuciones sin ficheros locales, p. ej. CI)")
     args = ap.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
                         datefmt="%H:%M:%S")
@@ -138,27 +199,33 @@ def main(argv=None) -> int:
         log.error("Falta pypdf. Ejecuta: pip install -r requirements.txt")
         return 2
 
-    issues = leer_jsonl(PARSED_DIR / "issues.jsonl")
-    articles = list({a["url"]: a for a in leer_jsonl(PARSED_DIR / "articles.jsonl")}.values())
-    if not issues or not articles:
-        log.error("Faltan data/parsed/issues.jsonl o articles.jsonl")
-        return 2
-
-    por_numero: dict[str, list[dict]] = {}
-    for a in articles:
-        if a.get("issue_url"):
-            por_numero.setdefault(a["issue_url"], []).append(a)
-
-    estado = json.loads(PDF_STATE.read_text(encoding="utf-8")) if PDF_STATE.exists() else {}
     pubs = set(args.publication or cfg.publications)
+    estado = {}
 
-    pendientes = []
-    for iss in issues:
-        if iss.get("publication") not in pubs or not iss.get("pdf_url"):
-            continue
-        arts = por_numero.get(iss["url"], [])
-        if any(not a.get("is_full") for a in arts):
-            pendientes.append((iss, arts))
+    if args.from_db:
+        if not cfg.database_url:
+            log.error("--from-db requiere DATABASE_URL en el entorno o .env")
+            return 2
+        pendientes = pendientes_desde_db(cfg.database_url, pubs)
+    else:
+        issues = leer_jsonl(PARSED_DIR / "issues.jsonl")
+        articles = list({a["url"]: a for a in leer_jsonl(PARSED_DIR / "articles.jsonl")}.values())
+        if not issues or not articles:
+            log.error("Faltan data/parsed/issues.jsonl o articles.jsonl "
+                      "(¿querías --from-db?)")
+            return 2
+        por_numero: dict[str, list[dict]] = {}
+        for a in articles:
+            if a.get("issue_url"):
+                por_numero.setdefault(a["issue_url"], []).append(a)
+        estado = json.loads(PDF_STATE.read_text(encoding="utf-8")) if PDF_STATE.exists() else {}
+        pendientes = []
+        for iss in issues:
+            if iss.get("publication") not in pubs or not iss.get("pdf_url"):
+                continue
+            arts = por_numero.get(iss["url"], [])
+            if any(not a.get("is_full") for a in arts):
+                pendientes.append((iss, arts))
     log.info("Números con artículos incompletos y PDF disponible: %d", len(pendientes))
 
     sess = PoliteSession(cfg.base_url, cfg.throttle)
@@ -202,6 +269,8 @@ def main(argv=None) -> int:
 
                 tramos = repartir(texto, arts)
                 n_num = 0
+                del_db: list[dict] = []
+                intentadas = [a["url"] for a in arts if not a.get("is_full")]
                 for art in arts:
                     if art.get("is_full"):
                         continue
@@ -212,24 +281,33 @@ def main(argv=None) -> int:
                     rec["body"] = nuevo
                     rec["is_full"] = len(nuevo) >= MIN_FULL_BODY
                     rec["source"] = "pdf"
-                    fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                    del_db.append(rec)
+                    if not args.from_db:
+                        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
                     n_num += 1
-                fh.flush()
+                if args.from_db:
+                    guardar_en_db(cfg.database_url, del_db, intentadas)
+                    del_db.clear()
+                else:
+                    fh.flush()
                 rescatados += n_num
                 log.info("nº %s: %d artículos rescatados del PDF (%d chars)",
                          iss.get("number"), n_num, len(texto))
                 estado[iss["url"]] = {"status": "ok", "rescatados": n_num}
-                PDF_STATE.write_text(json.dumps(estado, ensure_ascii=False), encoding="utf-8")
+                if not args.from_db:
+                    PDF_STATE.write_text(json.dumps(estado, ensure_ascii=False), encoding="utf-8")
     except ScraperBlocked as exc:
         log.error("%s", exc)
         return 4
     except KeyboardInterrupt:
         log.info("Interrumpido; progreso guardado.")
     finally:
-        PDF_STATE.write_text(json.dumps(estado, ensure_ascii=False), encoding="utf-8")
+        if not args.from_db:
+            PDF_STATE.write_text(json.dumps(estado, ensure_ascii=False), encoding="utf-8")
 
     log.info("Hecho: %d números procesados, %d artículos rescatados.", hechos, rescatados)
-    log.info("Ahora ejecuta: python -m db.load")
+    if not args.from_db:
+        log.info("Ahora ejecuta: python -m db.load")
     return 0
 
 

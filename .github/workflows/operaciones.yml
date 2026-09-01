@@ -1,0 +1,113 @@
+# Operaciones sobre la hemeroteca, ejecutadas en GitHub y no en el PC.
+#
+# Se lanza a mano (Actions → operaciones → Run workflow) o desde una sesión de
+# Claude Code. Todas las operaciones trabajan contra la base de datos de
+# Railway, así que el runner no necesita ficheros locales.
+#
+# Secretos: DATABASE_URL y PE_COOKIES.
+
+name: operaciones
+
+on:
+  workflow_dispatch:
+    inputs:
+      operacion:
+        description: "Qué hacer"
+        required: true
+        default: diagnostico
+        type: choice
+        options:
+          - diagnostico      # informe de calidad de los datos (no toca nada)
+          - scrapear         # busca números nuevos y los carga
+          - pdfs             # rescata texto de los PDF de números incompletos
+      publicacion:
+        description: "Publicación (vacío = todas)"
+        required: false
+        default: ""
+        type: choice
+        options:
+          - ""
+          - informe-semanal
+          - politica-exterior
+      anyos:
+        description: "Años para scrapear, p. ej. 2026 o 2024-2026 (vacío = año en curso)"
+        required: false
+        default: ""
+      limite:
+        description: "Máximo de artículos/números en esta ejecución (0 = sin límite)"
+        required: false
+        default: "0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scrape          # nunca dos operaciones a la vez contra el mismo sitio
+  cancel-in-progress: false
+
+jobs:
+  operar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Escribir cookies de sesión
+        if: inputs.operacion != 'diagnostico'
+        env:
+          PE_COOKIES: ${{ secrets.PE_COOKIES }}
+        run: |
+          mkdir -p data
+          printf '%s\n' "$PE_COOKIES" > data/cookies.txt
+          test -s data/cookies.txt || { echo "El secreto PE_COOKIES está vacío"; exit 1; }
+
+      - name: Ejecutar
+        env:
+          PE_COOKIES_FILE: data/cookies.txt
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          OPERACION: ${{ inputs.operacion }}
+          PUBLICACION: ${{ inputs.publicacion }}
+          ANYOS: ${{ inputs.anyos }}
+          LIMITE: ${{ inputs.limite }}
+        run: |
+          set -o pipefail
+          PUB_ARG=""
+          [ -n "$PUBLICACION" ] && PUB_ARG="--publication $PUBLICACION"
+          LIM_ARG=""
+          [ "${LIMITE:-0}" != "0" ] && LIM_ARG="--limit $LIMITE"
+
+          case "$OPERACION" in
+            diagnostico)
+              python -m db.diag | tee informe.txt
+              ;;
+            scrapear)
+              AN="${ANYOS:-$(date -u +%Y)}"
+              python -m scraper.run $PUB_ARG --years "$AN" --skip-from-db $LIM_ARG | tee informe.txt
+              python -m db.load | tee -a informe.txt
+              python -m db.diag | tee -a informe.txt
+              ;;
+            pdfs)
+              python -m scraper.pdfs --from-db $PUB_ARG $LIM_ARG | tee informe.txt
+              python -m db.diag | tee -a informe.txt
+              ;;
+            *)
+              echo "Operación desconocida: $OPERACION"; exit 1 ;;
+          esac
+
+      - name: Resumen
+        if: always()
+        run: |
+          {
+            echo "## Operación: ${{ inputs.operacion }}"
+            echo '```'
+            tail -n 60 informe.txt 2>/dev/null || echo "(sin salida)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
