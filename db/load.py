@@ -42,9 +42,13 @@ def main() -> int:
         return 2
 
     issues = read_jsonl(PARSED_DIR / "issues.jsonl")
+    # El texto rescatado de los PDF se aplica ENCIMA del extraído de la web.
     articles = read_jsonl(PARSED_DIR / "articles.jsonl")
-    # Si un artículo se scrapeó varias veces, gana el registro más reciente.
-    articles = list({a["url"]: a for a in articles}.values())
+    rescatados = read_jsonl(PARSED_DIR / "articles_pdf.jsonl")
+    if rescatados:
+        log.info("%d artículos con texto rescatado de PDF", len(rescatados))
+    # Si un artículo aparece varias veces, gana el registro más reciente.
+    articles = list({a["url"]: a for a in articles + rescatados}.values())
     log.info("A cargar: %d números, %d artículos", len(issues), len(articles))
 
     with psycopg.connect(cfg.database_url, row_factory=dict_row) as conn:

@@ -13,4 +13,6 @@ cookies.txt
 data/raw/
 data/parsed/
 data/debug/
+data/pdfs/
 data/state.json
+data/pdf_state.json

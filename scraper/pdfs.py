@@ -1,0 +1,237 @@
+"""Rescata el texto de los artículos incompletos desde el PDF de su número.
+
+Los números antiguos del Informe Semanal (2009-2012) y algunos de la revista
+publican en la web solo una ficha con un extracto: el texto íntegro está en el
+PDF del número, cuyo enlace guardamos al scrapear. Este módulo descarga esos
+PDFs (con el mismo ritmo educado del scraper), extrae su texto y lo reparte
+entre los artículos del número.
+
+    python -m scraper.pdfs                 # todos los números con huecos
+    python -m scraper.pdfs --limit 5       # prueba corta
+    python -m scraper.pdfs --publication informe-semanal
+
+Escribe data/parsed/articles_pdf.jsonl, que `db.load` aplica ENCIMA de
+articles.jsonl (gana el texto rescatado). Es reanudable: data/pdf_state.json
+recuerda los números ya procesados.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import re
+import sys
+import unicodedata
+
+from .config import DATA_DIR, PARSED_DIR, ensure_dirs, load_config
+from .parse import MIN_FULL_BODY
+from .session import PoliteSession, ScraperBlocked
+
+log = logging.getLogger("pdfs")
+
+PDF_DIR = DATA_DIR / "pdfs"
+PDF_STATE = DATA_DIR / "pdf_state.json"
+OUT = PARSED_DIR / "articles_pdf.jsonl"
+SEP = "\x00PARR\x00"  # centinela interno para marcar separación de párrafos
+
+
+# --------------------------------------------------------------- utilidades
+def normalizar(s: str) -> tuple[str, list[int]]:
+    """Versión comparable de un texto (sin acentos, minúsculas, solo
+    alfanuméricos y espacios) junto al índice original de cada carácter,
+    para poder recortar después sobre el texto real."""
+    out: list[str] = []
+    idx: list[int] = []
+    espacio = True
+    for i, ch in enumerate(s):
+        desc = unicodedata.normalize("NFKD", ch)
+        desc = "".join(c for c in desc if not unicodedata.combining(c)).lower()
+        for c in desc:
+            if c.isalnum():
+                out.append(c)
+                idx.append(i)
+                espacio = False
+            elif not espacio:
+                out.append(" ")
+                idx.append(i)
+                espacio = True
+    return "".join(out), idx
+
+
+def limpiar_pdf(texto: str) -> str:
+    """Une palabras partidas por guion, junta las líneas de un mismo párrafo y
+    conserva los saltos dobles del PDF como separación de párrafos."""
+    texto = texto.replace("\r", "")
+    texto = re.sub(r"(\w)-\n(\w)", r"\1\2", texto)      # guion de corte de línea
+    texto = re.sub(r"\n{2,}", SEP, texto)               # párrafo → centinela
+    texto = re.sub(r"[ \t]*\n[ \t]*", " ", texto)       # salto simple → espacio
+    texto = texto.replace(SEP, "\n\n")
+    texto = re.sub(r"[ \t]{2,}", " ", texto)
+    return texto.strip()
+
+
+def extraer_texto(ruta) -> str:
+    from pypdf import PdfReader
+
+    reader = PdfReader(str(ruta))
+    paginas = []
+    for pag in reader.pages:
+        try:
+            paginas.append(pag.extract_text() or "")
+        except Exception as exc:  # una página corrupta no debe tirar el número
+            log.warning("  página ilegible en %s: %s", ruta.name, exc)
+    return limpiar_pdf("\n\n".join(paginas))
+
+
+def repartir(texto: str, articulos: list[dict]) -> dict[str, str]:
+    """Asigna a cada artículo el tramo del PDF que va desde su titular hasta el
+    titular siguiente. Con un solo artículo, le corresponde todo el texto."""
+    if not articulos:
+        return {}
+    if len(articulos) == 1:
+        return {articulos[0]["url"]: texto}
+
+    norm, idx = normalizar(texto)
+    posiciones = []
+    for art in articulos:
+        titulo = (art.get("title") or "").strip()
+        if len(titulo) < 8:
+            continue
+        ntit, _ = normalizar(titulo)
+        p = norm.find(ntit)
+        if p == -1 and len(ntit) > 40:      # reintento con el arranque del titular
+            p = norm.find(ntit[:40])
+        if p != -1:
+            posiciones.append((idx[p], art))
+
+    if not posiciones:
+        return {}
+    posiciones.sort(key=lambda t: t[0])
+    tramos: dict[str, str] = {}
+    for i, (ini, art) in enumerate(posiciones):
+        fin = posiciones[i + 1][0] if i + 1 < len(posiciones) else len(texto)
+        tramos[art["url"]] = texto[ini:fin].strip()
+    return tramos
+
+
+def leer_jsonl(path) -> list[dict]:
+    if not path.exists():
+        return []
+    return [json.loads(l) for l in path.read_text(encoding="utf-8").splitlines() if l.strip()]
+
+
+# -------------------------------------------------------------------- main
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description="Rescata texto desde los PDF de los números")
+    ap.add_argument("--publication", action="append", help="slug (repetible)")
+    ap.add_argument("--limit", type=int, default=0, help="máximo de números en esta ejecución")
+    args = ap.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
+                        datefmt="%H:%M:%S")
+    ensure_dirs()
+    PDF_DIR.mkdir(parents=True, exist_ok=True)
+    cfg = load_config()
+
+    try:
+        import pypdf  # noqa: F401
+    except ImportError:
+        log.error("Falta pypdf. Ejecuta: pip install -r requirements.txt")
+        return 2
+
+    issues = leer_jsonl(PARSED_DIR / "issues.jsonl")
+    articles = list({a["url"]: a for a in leer_jsonl(PARSED_DIR / "articles.jsonl")}.values())
+    if not issues or not articles:
+        log.error("Faltan data/parsed/issues.jsonl o articles.jsonl")
+        return 2
+
+    por_numero: dict[str, list[dict]] = {}
+    for a in articles:
+        if a.get("issue_url"):
+            por_numero.setdefault(a["issue_url"], []).append(a)
+
+    estado = json.loads(PDF_STATE.read_text(encoding="utf-8")) if PDF_STATE.exists() else {}
+    pubs = set(args.publication or cfg.publications)
+
+    pendientes = []
+    for iss in issues:
+        if iss.get("publication") not in pubs or not iss.get("pdf_url"):
+            continue
+        arts = por_numero.get(iss["url"], [])
+        if any(not a.get("is_full") for a in arts):
+            pendientes.append((iss, arts))
+    log.info("Números con artículos incompletos y PDF disponible: %d", len(pendientes))
+
+    sess = PoliteSession(cfg.base_url, cfg.throttle)
+    if cfg.cookies_file:
+        sess.load_cookies(cfg.cookies_file)
+    elif cfg.username and cfg.password:
+        sess.login(cfg.username, cfg.password)
+    else:
+        log.error("Sin autenticación: los PDF son de pago. Configura .env")
+        return 2
+
+    hechos = rescatados = 0
+    try:
+        with open(OUT, "a", encoding="utf-8") as fh:
+            for iss, arts in pendientes:
+                if estado.get(iss["url"], {}).get("status") == "ok":
+                    continue
+                if args.limit and hechos >= args.limit:
+                    log.info("Alcanzado --limit=%d", args.limit)
+                    break
+
+                nombre = f"{iss.get('publication')}-{iss.get('number') or 'sn'}.pdf"
+                destino = PDF_DIR / nombre
+                if not destino.exists():
+                    resp = sess.get(iss["pdf_url"])
+                    tipo = resp.headers.get("Content-Type", "")
+                    if resp.status_code != 200 or "pdf" not in tipo.lower():
+                        log.warning("nº %s: no es un PDF (%s, %s)",
+                                    iss.get("number"), resp.status_code, tipo[:40])
+                        estado[iss["url"]] = {"status": "no-pdf"}
+                        continue
+                    destino.write_bytes(resp.content)
+                hechos += 1
+
+                texto = extraer_texto(destino)
+                if len(texto) < MIN_FULL_BODY:
+                    log.warning("nº %s: el PDF apenas tiene texto (%d chars); "
+                                "puede estar escaneado", iss.get("number"), len(texto))
+                    estado[iss["url"]] = {"status": "sin-texto"}
+                    continue
+
+                tramos = repartir(texto, arts)
+                n_num = 0
+                for art in arts:
+                    if art.get("is_full"):
+                        continue
+                    nuevo = tramos.get(art["url"])
+                    if not nuevo or len(nuevo) <= max(len(art.get("body") or ""), 400):
+                        continue
+                    rec = dict(art)
+                    rec["body"] = nuevo
+                    rec["is_full"] = len(nuevo) >= MIN_FULL_BODY
+                    rec["source"] = "pdf"
+                    fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                    n_num += 1
+                fh.flush()
+                rescatados += n_num
+                log.info("nº %s: %d artículos rescatados del PDF (%d chars)",
+                         iss.get("number"), n_num, len(texto))
+                estado[iss["url"]] = {"status": "ok", "rescatados": n_num}
+                PDF_STATE.write_text(json.dumps(estado, ensure_ascii=False), encoding="utf-8")
+    except ScraperBlocked as exc:
+        log.error("%s", exc)
+        return 4
+    except KeyboardInterrupt:
+        log.info("Interrumpido; progreso guardado.")
+    finally:
+        PDF_STATE.write_text(json.dumps(estado, ensure_ascii=False), encoding="utf-8")
+
+    log.info("Hecho: %d números procesados, %d artículos rescatados.", hechos, rescatados)
+    log.info("Ahora ejecuta: python -m db.load")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
