@@ -73,6 +73,10 @@ def partir_cola(cuerpo: str, llano: str | None = None):
 
 
 def main(argv=None) -> int:
+    # Sin esto la salida no aparece hasta el final cuando va por una tubería,
+    # y un proceso largo parece colgado.
+    sys.stdout.reconfigure(line_buffering=True)
+
     ap = argparse.ArgumentParser(description="Cortar la cola de relacionados")
     ap.add_argument("--escribir", action="store_true",
                     help="sin esto, solo dice lo que haría")
@@ -195,12 +199,23 @@ def main(argv=None) -> int:
                   "--deshacer --escribir.")
             return 0
 
-        for art_id, nuevo, cola in cortes:
-            cur.execute("""UPDATE articles SET body = %s, trimmed_tail = %s
-                            WHERE id = %s""", (nuevo, cola, art_id))
+        # Una UPDATE por fila son 2.595 idas y venidas a Railway, y cada una
+        # rehace el tsvector y el índice GIN: media hora larga. En un solo
+        # UPDATE contra una tabla de valores es un viaje y un barrido.
+        cur.execute("""
+            UPDATE articles a
+               SET body = v.cuerpo, trimmed_tail = v.cola
+              FROM (SELECT * FROM unnest(%s::int[], %s::text[], %s::text[])
+                      AS t(id, cuerpo, cola)) v
+             WHERE a.id = v.id
+        """, ([c[0] for c in cortes], [c[1] for c in cortes],
+              [c[2] for c in cortes]))
+        tocadas = cur.rowcount
         conn.commit()
-        print(f"\n  Cortados {len(cortes)} análisis. "
+        print(f"\n  Cortados {tocadas} análisis. "
               f"La búsqueda se reindexa sola (tsv es GENERATED).")
+        if tocadas != len(cortes):
+            print(f"  Ojo: esperaba {len(cortes)}.")
     return 0
 
 
