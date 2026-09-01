@@ -154,6 +154,7 @@ def pendientes_desde_db(database_url: str, pubs: set[str]) -> list[tuple[dict, l
                WHERE i.pdf_url IS NOT NULL AND p.slug = ANY(%s)
                  AND EXISTS (SELECT 1 FROM articles a
                              WHERE a.issue_id = i.id AND NOT a.is_full
+                               AND a.kind <> 'portada'
                                AND a.pdf_rescued_at IS NULL)
                ORDER BY i.published_date DESC NULLS LAST""",
             (list(pubs),),
@@ -162,7 +163,8 @@ def pendientes_desde_db(database_url: str, pubs: set[str]) -> list[tuple[dict, l
         for iss in numeros:
             cur.execute(
                 """SELECT url, title, coalesce(body, '') AS body, is_full
-                   FROM articles WHERE issue_id = %s ORDER BY id""",
+                   FROM articles WHERE issue_id = %s AND kind <> 'portada'
+                   ORDER BY id""",
                 (iss["id"],),
             )
             out.append((iss, cur.fetchall()))

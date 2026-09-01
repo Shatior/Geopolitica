@@ -94,8 +94,9 @@ def main() -> int:
                 cur.execute(
                     """INSERT INTO articles
                            (publication_id, issue_id, url, title, subtitle, authors,
-                            tags, published_date, body, is_full, raw_html_path, scraped_at)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            tags, published_date, body, is_full, raw_html_path,
+                            scraped_at, kind)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                        ON CONFLICT (url) DO UPDATE SET
                            issue_id = COALESCE(EXCLUDED.issue_id, articles.issue_id),
                            title = EXCLUDED.title,
@@ -106,7 +107,8 @@ def main() -> int:
                            body = EXCLUDED.body,
                            is_full = EXCLUDED.is_full,
                            raw_html_path = EXCLUDED.raw_html_path,
-                           scraped_at = EXCLUDED.scraped_at""",
+                           scraped_at = EXCLUDED.scraped_at,
+                           kind = EXCLUDED.kind""",
                     (
                         pub_ids[rec["publication"]],
                         issue_ids.get(rec.get("issue_url")),
@@ -115,6 +117,7 @@ def main() -> int:
                         rec.get("published_date"), rec.get("body"),
                         rec.get("is_full", False), rec.get("raw_html_path"),
                         rec.get("scraped_at"),
+                        rec.get("kind") or "articulo",
                     ),
                 )
                 n += 1

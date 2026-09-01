@@ -45,8 +45,16 @@ CREATE TABLE IF NOT EXISTS articles (
 -- para no volver a descargarlo en cada ejecución.
 ALTER TABLE articles ADD COLUMN IF NOT EXISTS pdf_rescued_at TIMESTAMPTZ;
 
+-- Distingue los análisis de las portadas de número de la revista bimestral,
+-- que viven bajo /articulo/ pero solo contienen el sumario del bimestre.
+ALTER TABLE articles ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'articulo';
+UPDATE articles SET kind = 'portada'
+ WHERE kind <> 'portada'
+   AND url ~ '/articulo/([a-z0-9-]*-)?(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)-?(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)-(19|20)[0-9]{2}/?$';
+
 CREATE INDEX IF NOT EXISTS idx_articles_tsv       ON articles USING GIN (tsv);
 CREATE INDEX IF NOT EXISTS idx_articles_tags      ON articles USING GIN (tags);
+CREATE INDEX IF NOT EXISTS idx_articles_kind      ON articles (kind);
 CREATE INDEX IF NOT EXISTS idx_articles_date      ON articles (published_date);
 CREATE INDEX IF NOT EXISTS idx_articles_pub_date  ON articles (publication_id, published_date);
 CREATE INDEX IF NOT EXISTS idx_issues_pub_number  ON issues (publication_id, number);

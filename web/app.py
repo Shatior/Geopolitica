@@ -73,14 +73,15 @@ def common_ctx(cur) -> dict:
     cur.execute(
         """SELECT count(*) AS total, count(DISTINCT issue_id) AS issues,
                   min(published_date) AS desde, max(published_date) AS hasta
-           FROM articles"""
+           FROM articles WHERE kind <> 'portada'"""
     )
     stats = cur.fetchone()
     cur.execute("SELECT slug, name FROM publications ORDER BY slug")
     pubs = cur.fetchall()
     cur.execute(
         """SELECT DISTINCT EXTRACT(YEAR FROM published_date)::int AS y
-           FROM articles WHERE published_date IS NOT NULL ORDER BY y DESC"""
+           FROM articles WHERE published_date IS NOT NULL
+             AND kind <> 'portada' ORDER BY y DESC"""
     )
     years = [r["y"] for r in cur.fetchall()]
     return {
@@ -182,7 +183,8 @@ def index(
                 """SELECT i.id, i.number, i.title, i.published_date, i.pdf_url,
                           p.name AS pub_name, p.slug AS pub_slug
                    FROM issues i JOIN publications p ON p.id = i.publication_id
-                   WHERE EXISTS (SELECT 1 FROM articles a WHERE a.issue_id = i.id)
+                   WHERE EXISTS (SELECT 1 FROM articles a
+                                 WHERE a.issue_id = i.id AND a.kind <> 'portada')
                    ORDER BY i.published_date DESC NULLS LAST LIMIT 1"""
             )
             numero = cur.fetchone()
@@ -192,7 +194,8 @@ def index(
                     """SELECT id, title, published_date, tags,
                               coalesce(subtitle, left(body, 420)) AS entradilla,
                               length(coalesce(body, '')) AS len
-                       FROM articles WHERE issue_id = %s ORDER BY len DESC""",
+                       FROM articles WHERE issue_id = %s AND kind <> 'portada'
+                       ORDER BY len DESC""",
                     (numero["id"],),
                 )
                 arts = cur.fetchall()
@@ -240,7 +243,7 @@ def index(
             })
 
         # --- modo resultados ---
-        where = ["TRUE"]
+        where = ["a.kind <> 'portada'"]
         params: dict = {"q": q, "pub": pub, "year": year}
         if q:
             where.append("a.tsv @@ websearch_to_tsquery('spanish', %(q)s)")
@@ -307,13 +310,15 @@ def article(request: Request, article_id: int, _: None = Depends(require_auth)):
         if art["issue_id"]:
             cur.execute(
                 """SELECT id, title FROM articles
-                   WHERE issue_id = %s AND id <> %s ORDER BY id""",
+                   WHERE issue_id = %s AND id <> %s AND kind <> 'portada'
+                   ORDER BY id""",
                 (art["issue_id"], article_id),
             )
             hermanos = cur.fetchall()
         cur.execute(
             """SELECT id, title FROM articles
                WHERE publication_id = %s AND (published_date, id) < (%s, %s)
+                 AND kind <> 'portada'
                ORDER BY published_date DESC, id DESC LIMIT 1""",
             (art["publication_id"], art["published_date"], article_id),
         )
@@ -321,6 +326,7 @@ def article(request: Request, article_id: int, _: None = Depends(require_auth)):
         cur.execute(
             """SELECT id, title FROM articles
                WHERE publication_id = %s AND (published_date, id) > (%s, %s)
+                 AND kind <> 'portada'
                ORDER BY published_date ASC, id ASC LIMIT 1""",
             (art["publication_id"], art["published_date"], article_id),
         )
@@ -356,7 +362,7 @@ def tendencias(
                 """SELECT EXTRACT(YEAR FROM published_date)::int AS y, count(*) AS n
                    FROM articles
                    WHERE tsv @@ websearch_to_tsquery('spanish', %s)
-                     AND published_date IS NOT NULL
+                     AND published_date IS NOT NULL AND kind <> 'portada'
                    GROUP BY y""",
                 (term,),
             )
@@ -370,6 +376,7 @@ def tendencias(
                 """SELECT a.id, a.title, a.published_date, p.name AS pub_name
                    FROM articles a JOIN publications p ON p.id = a.publication_id
                    WHERE a.tsv @@ websearch_to_tsquery('spanish', %(t)s)
+                     AND a.kind <> 'portada'
                    ORDER BY ts_rank(a.tsv, websearch_to_tsquery('spanish', %(t)s)) DESC
                    LIMIT 6""",
                 {"t": terms[0]},
@@ -380,6 +387,7 @@ def tendencias(
             """SELECT tag, count(*) AS n FROM (
                    SELECT unnest(tags) AS tag FROM articles
                    WHERE EXTRACT(YEAR FROM published_date) = %s
+                     AND kind <> 'portada' 
                ) t GROUP BY tag ORDER BY n DESC LIMIT 7""",
             (y1,),
         )

@@ -41,6 +41,22 @@ _RE_BREADCRUMB = re.compile(
 )
 
 
+# Las portadas de cada número de la revista bimestral viven bajo /articulo/
+# pero no son análisis: su slug es el bimestre («mayo-junio-2017»,
+# «julioagosto-2019», «politica-exterior-no-181-enero-febrero-2018») y su
+# contenido es el sumario. Se marcan aparte para no contarlas como artículos
+# incompletos ni mostrarlas en la hemeroteca.
+_MESES_SLUG = ("enero|febrero|marzo|abril|mayo|junio|julio|agosto|"
+               "septiembre|octubre|noviembre|diciembre")
+_RE_PORTADA = re.compile(
+    rf"/articulo/(?:[a-z0-9-]*-)?(?:{_MESES_SLUG})-?(?:{_MESES_SLUG})-(?:19|20)\d{{2}}/?$"
+)
+
+
+def es_portada_de_numero(url: str) -> bool:
+    return bool(_RE_PORTADA.search(url or ""))
+
+
 def _is_generic_title(text: str | None) -> bool:
     if not text:
         return True
@@ -276,6 +292,7 @@ def parse_article(html: str, url: str) -> dict:
 
     return {
         "url": url,
+        "kind": "portada" if es_portada_de_numero(url) else "articulo",
         "title": title,
         "subtitle": subtitle,
         "authors": authors,

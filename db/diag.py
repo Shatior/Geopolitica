@@ -60,11 +60,14 @@ def main() -> int:
         print("\n--- Otras anomalías ---")
         cur.execute("SELECT count(*) FROM articles WHERE title LIKE 'http%'")
         print(f"Títulos que quedaron como URL: {cur.fetchone()[0]}")
+        cur.execute("SELECT count(*) FROM articles WHERE kind = 'portada'")
+        print(f"Portadas de número (sumarios, no análisis): {cur.fetchone()[0]}")
         cur.execute(
             """SELECT count(*) FROM articles
-               WHERE coalesce(body, '') = '' OR length(body) < 200"""
+               WHERE kind <> 'portada'
+                 AND (coalesce(body, '') = '' OR length(body) < 200)"""
         )
-        print(f"Artículos con cuerpo muy corto (<200 chars): {cur.fetchone()[0]}")
+        print(f"Análisis con cuerpo muy corto (<200 chars): {cur.fetchone()[0]}")
         cur.execute(
             """SELECT title, count(*) AS n FROM articles
                GROUP BY title HAVING count(*) > 2 ORDER BY n DESC LIMIT 8"""
@@ -77,7 +80,8 @@ def main() -> int:
         else:
             print("Sin títulos sospechosamente repetidos.")
         cur.execute(
-            """SELECT p.slug, count(*), min(a.published_date), max(a.published_date)
+            """SELECT p.slug, count(*) FILTER (WHERE a.kind <> 'portada'),
+                      min(a.published_date), max(a.published_date)
                FROM articles a JOIN publications p ON p.id = a.publication_id
                GROUP BY p.slug ORDER BY p.slug"""
         )
