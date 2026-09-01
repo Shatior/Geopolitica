@@ -23,7 +23,7 @@ import re
 import sys
 import unicodedata
 
-from .config import (DATA_DIR, PARSED_DIR, aviso_database_url,
+from .config import (DATA_DIR, PARSED_DIR, ROOT, aviso_database_url,
                       ensure_dirs, load_config)
 from .parse import MIN_FULL_BODY
 from .session import PoliteSession, ScraperBlocked
@@ -123,6 +123,16 @@ def leer_jsonl(path) -> list[dict]:
 
 
 # ------------------------------------------------------- origen: base de datos
+def asegurar_esquema(database_url: str) -> None:
+    """Aplica db/schema.sql (idempotente) para que este módulo pueda ejecutarse
+    por sí solo, sin depender de que db.load haya corrido antes."""
+    import psycopg
+
+    with psycopg.connect(database_url) as conn, conn.cursor() as cur:
+        cur.execute((ROOT / "db" / "schema.sql").read_text(encoding="utf-8"))
+        conn.commit()
+
+
 def pendientes_desde_db(database_url: str, pubs: set[str]) -> list[tuple[dict, list[dict]]]:
     """Números con al menos un artículo incompleto y PDF disponible, leídos de
     la base de datos. Es naturalmente reanudable: al marcar los artículos como
@@ -208,6 +218,7 @@ def main(argv=None) -> int:
         if aviso:
             log.error("%s", aviso)
             return 2
+        asegurar_esquema(cfg.database_url)
         pendientes = pendientes_desde_db(cfg.database_url, pubs)
     else:
         issues = leer_jsonl(PARSED_DIR / "issues.jsonl")
