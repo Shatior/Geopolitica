@@ -72,6 +72,45 @@ def main(argv=None) -> int:
                 marcas.append(f"{m} {cur.fetchone()[0] * 100 // max(n, 1)}%")
             print("  presencia: " + " · ".join(marcas))
 
+            # ¿Escriben los mismos? Un cambio de firmas explica un cambio de
+            # registro mucho mejor que cualquier hipótesis sobre la agenda.
+            cur.execute("""
+                SELECT count(*) FILTER (WHERE a.author IS NOT NULL),
+                       count(DISTINCT a.author)
+                FROM articles a JOIN publications p ON p.id = a.publication_id
+                WHERE p.slug = %s AND a.kind <> 'portada' AND a.is_full
+                  AND EXTRACT(YEAR FROM a.published_date) = %s
+            """, (args.publicacion, anyo))
+            con_firma, firmas = cur.fetchone()
+            cur.execute("""
+                SELECT count(*) FROM articles a
+                JOIN publications p ON p.id = a.publication_id
+                WHERE p.slug = %s AND a.kind <> 'portada' AND a.is_full
+                  AND EXTRACT(YEAR FROM a.published_date) = %s
+                  AND a.author IS NOT NULL
+                  AND NOT EXISTS (
+                      SELECT 1 FROM articles b
+                      JOIN publications q ON q.id = b.publication_id
+                      WHERE q.slug = p.slug AND b.author = a.author
+                        AND EXTRACT(YEAR FROM b.published_date) < %s)
+            """, (args.publicacion, anyo, anyo))
+            nuevos = cur.fetchone()[0]
+            print(f"  firmas: {firmas} distintas en {con_firma} análisis firmados"
+                  f"  ·  {nuevos} de autores que no habían publicado antes "
+                  f"({nuevos * 100 // max(con_firma, 1)}%)")
+
+            cur.execute("""
+                SELECT a.author, count(*) c
+                FROM articles a JOIN publications p ON p.id = a.publication_id
+                WHERE p.slug = %s AND a.kind <> 'portada' AND a.is_full
+                  AND EXTRACT(YEAR FROM a.published_date) = %s
+                  AND a.author IS NOT NULL
+                GROUP BY a.author ORDER BY c DESC LIMIT 6
+            """, (args.publicacion, anyo))
+            top = ", ".join(f"{au} ({c})" for au, c in cur.fetchall())
+            if top:
+                print(f"  más frecuentes: {top}")
+
             cur.execute("""
                 SELECT a.published_date, a.title, a.body, a.url
                 FROM articles a JOIN publications p ON p.id = a.publication_id
