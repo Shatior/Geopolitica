@@ -74,38 +74,47 @@ def main(argv=None) -> int:
 
             # ¿Escriben los mismos? Un cambio de firmas explica un cambio de
             # registro mucho mejor que cualquier hipótesis sobre la agenda.
+            # 'authors' es TEXT[]: un análisis puede ir firmado por varios.
             cur.execute("""
-                SELECT count(*) FILTER (WHERE a.author IS NOT NULL),
-                       count(DISTINCT a.author)
+                SELECT count(*) FILTER (WHERE cardinality(a.authors) > 0),
+                       count(DISTINCT au)
                 FROM articles a JOIN publications p ON p.id = a.publication_id
+                LEFT JOIN LATERAL unnest(a.authors) AS au ON true
                 WHERE p.slug = %s AND a.kind <> 'portada' AND a.is_full
                   AND EXTRACT(YEAR FROM a.published_date) = %s
             """, (args.publicacion, anyo))
             con_firma, firmas = cur.fetchone()
+
+            # Firmas que no habían aparecido nunca antes en esta publicación.
             cur.execute("""
-                SELECT count(*) FROM articles a
-                JOIN publications p ON p.id = a.publication_id
-                WHERE p.slug = %s AND a.kind <> 'portada' AND a.is_full
-                  AND EXTRACT(YEAR FROM a.published_date) = %s
-                  AND a.author IS NOT NULL
-                  AND NOT EXISTS (
-                      SELECT 1 FROM articles b
-                      JOIN publications q ON q.id = b.publication_id
-                      WHERE q.slug = p.slug AND b.author = a.author
-                        AND EXTRACT(YEAR FROM b.published_date) < %s)
-            """, (args.publicacion, anyo, anyo))
-            nuevos = cur.fetchone()[0]
+                WITH del_anyo AS (
+                    SELECT DISTINCT au FROM articles a
+                    JOIN publications p ON p.id = a.publication_id,
+                    unnest(a.authors) AS au
+                    WHERE p.slug = %s AND a.kind <> 'portada' AND a.is_full
+                      AND EXTRACT(YEAR FROM a.published_date) = %s
+                ), previas AS (
+                    SELECT DISTINCT au FROM articles a
+                    JOIN publications p ON p.id = a.publication_id,
+                    unnest(a.authors) AS au
+                    WHERE p.slug = %s AND a.kind <> 'portada' AND a.is_full
+                      AND EXTRACT(YEAR FROM a.published_date) < %s
+                )
+                SELECT count(*) FROM del_anyo
+                WHERE au NOT IN (SELECT au FROM previas)
+            """, (args.publicacion, anyo, args.publicacion, anyo))
+            nuevas = cur.fetchone()[0]
             print(f"  firmas: {firmas} distintas en {con_firma} análisis firmados"
-                  f"  ·  {nuevos} de autores que no habían publicado antes "
-                  f"({nuevos * 100 // max(con_firma, 1)}%)")
+                  f"  ·  {nuevas} nunca vistas antes "
+                  f"({nuevas * 100 // max(firmas, 1)}% de las del año)")
 
             cur.execute("""
-                SELECT a.author, count(*) c
-                FROM articles a JOIN publications p ON p.id = a.publication_id
+                SELECT au, count(*) c
+                FROM articles a JOIN publications p ON p.id = a.publication_id,
+                unnest(a.authors) AS au
                 WHERE p.slug = %s AND a.kind <> 'portada' AND a.is_full
                   AND EXTRACT(YEAR FROM a.published_date) = %s
-                  AND a.author IS NOT NULL
-                GROUP BY a.author ORDER BY c DESC LIMIT 6
+                GROUP BY au ORDER BY c DESC LIMIT 6
             """, (args.publicacion, anyo))
             top = ", ".join(f"{au} ({c})" for au, c in cur.fetchall())
             if top:
