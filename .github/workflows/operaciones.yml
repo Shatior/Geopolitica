@@ -23,6 +23,7 @@ on:
           - lentes           # ejecuta las lentes de análisis (sin coste de IA)
           - muestras         # imprime textos de ejemplo por año, para leerlos
           - probar-pdf       # comprueba si la suscripción da acceso a los PDF
+          - comparar         # lista lo guardado de un número, para cotejarlo con su PDF
           - enriquecer-estimar   # cuánto costaría enriquecer lo pendiente (gratis)
           - enriquecer-enviar    # CUESTA DINERO: manda un lote a Haiku
           - enriquecer-estado    # cómo va el lote en curso
@@ -43,6 +44,14 @@ on:
         description: "Años para scrapear, p. ej. 2026 o 2024-2026 (vacío = año en curso)"
         required: false
         default: ""
+      numero:
+        description: "Solo en 'comparar': número a listar"
+        required: false
+        default: ""
+      chars_pdf:
+        description: "Solo en 'comparar': caracteres del PDF, si ya se midieron"
+        required: false
+        default: "0"
       limite:
         description: "Máximo de artículos/números en esta ejecución (0 = sin límite)"
         required: false
@@ -98,6 +107,8 @@ jobs:
           ANYOS: ${{ inputs.anyos }}
           LIMITE: ${{ inputs.limite }}
           REINTENTAR: ${{ inputs.reintentar }}
+          NUMERO: ${{ inputs.numero }}
+          CHARS_PDF: ${{ inputs.chars_pdf }}
         run: |
           set -o pipefail
           PUB_ARG=""
@@ -120,6 +131,13 @@ jobs:
             enriquecer-*)
               python -m enriquecer.run "${OPERACION#enriquecer-}" \
                 $PUB_ARG_LENTE --limite "${LIMITE:-0}" | tee informe.txt
+              ;;
+            comparar)
+              CH_ARG=""
+              [ "${CHARS_PDF:-0}" != "0" ] && CH_ARG="--chars-pdf $CHARS_PDF"
+              python -m scraper.comparar --solo-db \
+                --publicacion "${PUBLICACION:-politica-exterior}" \
+                --numero "$NUMERO" $CH_ARG | tee informe.txt
               ;;
             probar-pdf)
               python -m scraper.probar_pdf $PUB_ARG_LENTE \
