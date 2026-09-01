@@ -126,6 +126,25 @@ class PoliteSession:
             "(el estado se guarda y continuará donde lo dejó)."
         )
 
+    def asomarse(self, url: str, max_bytes: int = 2048) -> tuple[int, dict, bytes]:
+        """Pide un recurso y lee solo su comienzo, sin descargarlo entero.
+
+        Pensado para comprobaciones: saber si detrás de un enlace hay un PDF o
+        una página de aviso no exige bajarse veinte megas. Devuelve el código,
+        las cabeceras y los primeros bytes.
+
+        A diferencia de get(), **no reintenta ante un 403**: aquí un «prohibido»
+        es la respuesta que buscamos (el sitio niega el documento), no un
+        bloqueo del que haya que recuperarse esperando un cuarto de hora.
+        """
+        self._throttle()
+        resp = self.session.get(url, timeout=45, stream=True)
+        try:
+            inicio = next(resp.iter_content(max_bytes), b"")
+        finally:
+            resp.close()
+        return resp.status_code, dict(resp.headers), inicio
+
     def _throttle(self) -> None:
         self._n_requests += 1
         if self.long_every and self._n_requests % self.long_every == 0:

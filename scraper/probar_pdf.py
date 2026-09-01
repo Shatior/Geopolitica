@@ -12,9 +12,10 @@ tocar nada:
 3. La suscripción no cubre la descarga de ese PDF.
 
 Esta comprobación resuelve las dos últimas: pide el PDF con nuestras cookies y
-cuenta qué contesta el servidor. NO descarga el fichero entero ni escribe nada
-en la base de datos; se queda con los primeros bytes, los justos para saber si
-es un PDF de verdad o una página de aviso.
+cuenta qué contesta el servidor. Lee el recurso en streaming y corta tras los
+primeros bytes —los justos para distinguir un PDF de una página de aviso—, de
+modo que no se descarga un número entero de la revista para averiguarlo. No
+escribe nada en la base de datos.
 """
 from __future__ import annotations
 
@@ -79,16 +80,15 @@ def main(argv=None) -> int:
 
     ok = 0
     for n in numeros:
-        resp = sess.get(n["pdf_url"], allow_cache=False)
-        tipo = resp.headers.get("Content-Type", "")
-        cuerpo = resp.content[:2000]
-        es_pdf = resp.status_code == 200 and (
-            "pdf" in tipo.lower() or cuerpo[:5] == b"%PDF-")
-        denegado = AVISO in cuerpo.decode("utf-8", "ignore").lower()
+        estado, cabeceras, inicio = sess.asomarse(n["pdf_url"])
+        tipo = cabeceras.get("Content-Type", "")
+        es_pdf = estado == 200 and ("pdf" in tipo.lower() or inicio[:5] == b"%PDF-")
+        texto = inicio.decode("utf-8", "ignore").lower()
+        denegado = estado in (401, 403) or AVISO in texto
 
         veredicto = ("PDF accesible" if es_pdf else
-                     "ACCESO DENEGADO" if denegado else
-                     f"respuesta inesperada ({resp.status_code}, {tipo[:30]})")
+                     f"ACCESO DENEGADO ({estado})" if denegado else
+                     f"respuesta inesperada ({estado}, {tipo[:30]})")
         if es_pdf:
             ok += 1
         print(f"  {n['slug']:20} nº {str(n['number'] or '?'):>6}  "
