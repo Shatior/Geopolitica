@@ -8,10 +8,19 @@ primero en el cuerpo de los textos y solo después llega a los titulares.
 Criterio de rechazo: si nada cumple las condiciones, no hay señal esa semana.
 
 Validación (retrospectiva): el detector se ejecuta tapando el archivo a partir
-de un año dado y se comprueba si lo que señaló entonces creció después. Se
-compara con un grupo de control de términos de frecuencia parecida que el
-detector NO señaló. Si no gana al control, sus avisos sobre el presente no
-merecen crédito, y así debe decirse.
+de un año dado y se comprueba **qué señaló que después llegó a titular**, que
+es exactamente lo que la lente afirma predecir. Se compara con un grupo de
+control de términos de frecuencia parecida que el detector NO señaló. Si no
+gana al control, sus avisos sobre el presente no merecen crédito, y así debe
+decirse.
+
+Dos correcciones tras la primera ejecución contra el archivo real:
+
+* La condición «nunca ha sido titular» mira **solo hasta el corte**. Usar el
+  archivo entero eliminaba de la selección de 2023 precisamente los términos
+  que serían titular en 2024-2026, es decir, los aciertos: la retrospectiva
+  estaba condenada a fracasar por construcción.
+* Las cuotas van corregidas por la densidad del periodo, como en el cronista.
 """
 from __future__ import annotations
 
@@ -25,7 +34,7 @@ CRECIMIENTO_MIN = 2.0  # la cuota debe al menos duplicarse en la ventana
 
 
 def _serie_cuotas(c: Corpus, termino: str, periodos: list[str]) -> list[float]:
-    return [c.cuota(termino, p) for p in periodos]
+    return [c.cuota_n(termino, p) for p in periodos]
 
 
 def detectar(c: Corpus, ventana: int = 4, top: int = 12,
@@ -34,14 +43,16 @@ def detectar(c: Corpus, ventana: int = 4, top: int = 12,
     if len(periodos) < ventana + 1:
         return []
     ultimos = periodos[-ventana:]
+    # Solo lo que se sabía en el corte: mirar titulares posteriores sería trampa.
+    ya_titular = c.titulares_hasta(periodos[-1]) if exigir_fuera_titulares else set()
 
     fuera: list[dict] = []
-    for termino, total_global in c.df_total.items():
+    for termino in c.df_total:
         # El total debe medirse solo hasta el corte, o la retrospectiva haría trampa.
         total = sum(c.df.get(termino, {}).get(p, 0) for p in periodos)
         if not (MIN_TOTAL <= total <= MAX_TOTAL):
             continue
-        if exigir_fuera_titulares and termino in c.en_titulares:
+        if termino in ya_titular:
             continue
         cuotas = _serie_cuotas(c, termino, ultimos)
         if cuotas[-1] <= 0:                       # tiene que estar vivo ahora
@@ -58,7 +69,8 @@ def detectar(c: Corpus, ventana: int = 4, top: int = 12,
         fuera.append({
             "termino": termino, "total": total,
             "n_ultimo": c.df.get(termino, {}).get(ultimos[-1], 0),
-            "cuotas": cuotas, "periodos": ultimos,
+            "cuotas": [c.cuota(termino, p) for p in ultimos],
+            "periodos": ultimos,
             "crecimiento": crecimiento,
             "impulso": cuotas[-1] - cuotas[0],
         })
@@ -71,7 +83,11 @@ def detectar(c: Corpus, ventana: int = 4, top: int = 12,
 
 def retrospectiva(c: Corpus, corte: str, ventana: int = 4,
                   horizonte: int = 3, semilla: int = 7) -> dict:
-    """¿Habría acertado el detector si lo hubiéramos tenido en su día?"""
+    """¿Habría acertado el detector si lo hubiéramos tenido en su día?
+
+    Acertar significa lo que la lente promete: que el término, entonces
+    enterrado en el cuerpo de los textos, llegase después a algún titular.
+    """
     posteriores = [p for p in c.periodos if p > corte][:horizonte]
     if not posteriores:
         return {"posible": False}
@@ -80,23 +96,28 @@ def retrospectiva(c: Corpus, corte: str, ventana: int = 4,
     if not señalados:
         return {"posible": False, "motivo": f"no hubo señales en el corte {corte}"}
 
-    def crecio(termino: str) -> bool:
-        antes = c.cuota(termino, corte)
-        despues = max(c.cuota(termino, p) for p in posteriores)
-        return despues >= max(antes, 1e-9) * 1.5
+    titulares_futuros: set[str] = set()
+    for p in posteriores:
+        titulares_futuros |= c.titulares.get(p, set())
 
-    aciertos = [d["termino"] for d in señalados if crecio(d["termino"])]
+    def llego_a_titular(t: str) -> bool:
+        return t in titulares_futuros
 
-    # Control: términos con soporte parecido que el detector NO señaló.
+    aciertos = [d["termino"] for d in señalados if llego_a_titular(d["termino"])]
+
+    # Control: términos con soporte parecido, no señalados y tampoco titular
+    # antes del corte, para que compitan en igualdad de condiciones.
     nombres = {d["termino"] for d in señalados}
+    ya_titular = c.titulares_hasta(corte)
     candidatos = [
-        t for t, _ in c.df_total.items()
-        if t not in nombres
-        and MIN_TOTAL <= sum(c.df.get(t, {}).get(p, 0) for p in c.periodos if p <= corte) <= MAX_TOTAL
+        t for t in c.df_total
+        if t not in nombres and t not in ya_titular
+        and MIN_TOTAL <= sum(c.df.get(t, {}).get(p, 0)
+                             for p in c.periodos if p <= corte) <= MAX_TOTAL
     ]
     random.Random(semilla).shuffle(candidatos)
     control = candidatos[:200]
-    aciertos_control = [t for t in control if crecio(t)]
+    aciertos_control = [t for t in control if llego_a_titular(t)]
 
     return {
         "posible": True, "corte": corte, "horizonte": posteriores,
@@ -117,8 +138,9 @@ def informe(c: Corpus, señales: list[dict], val: dict | None) -> str:
         out += [
             f"Validación retrospectiva · corte en {val['corte']}, "
             f"horizonte {val['horizonte'][0]}–{val['horizonte'][-1]}",
+            f"  Acertar = el término llegó después a algún titular.",
             f"  De {val['n_señalados']} términos señalados entonces, "
-            f"{val['n_aciertos']} crecieron después ({val['tasa']*100:.0f}%).",
+            f"{val['n_aciertos']} lo lograron ({val['tasa']*100:.0f}%).",
             f"  Grupo de control con soporte parecido: {val['tasa_control']*100:.0f}%.",
             f"  → {veredicto}" + (f" (×{mejora:.1f})" if mejora != float('inf') else ""),
         ]

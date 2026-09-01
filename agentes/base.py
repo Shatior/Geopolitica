@@ -19,6 +19,16 @@ Decisiones metodológicas que condicionan todo lo demás:
 * Los resultados se **desduplican por solapamiento**: si «corredor ártico»,
   «corredor» y «ártico» señalan los mismos análisis, solo sobrevive el más
   informativo.
+* Las cuotas se **corrigen por densidad del periodo**. Un análisis más largo
+  contiene más términos distintos, así que la cuota de *cualquier* palabra
+  sube con la longitud media de los textos. Si un año los análisis son más
+  extensos —o se extrajeron mejor—, todo el vocabulario parece ganar
+  atención a la vez. Se calcula un factor de escala por periodo (la mediana
+  del cociente de cada término frecuente respecto a su propia media
+  geométrica) y se divide por él: el ruido común se va, la señal se queda.
+* Los titulares se guardan **por periodo**. Preguntar si un término «ya fue
+  titular» solo puede mirar hacia atrás; usar el archivo entero filtraría
+  del pasado justo los términos que triunfaron después.
 """
 from __future__ import annotations
 
@@ -108,10 +118,28 @@ class Corpus:
     df: dict[str, dict[str, int]]             # término -> periodo -> nº de análisis
     df_total: dict[str, int]
     en_titulares: set[str]
+    titulares: dict[str, set[str]] = field(default_factory=dict)
+    densidad: dict[str, float] = field(default_factory=dict)
+    escala: dict[str, float] = field(default_factory=dict)
+    descartados: int = 0                      # análisis sin texto completo
 
     def cuota(self, termino: str, periodo: str) -> float:
         n = self.docs_por_periodo.get(periodo, 0)
         return self.df.get(termino, {}).get(periodo, 0) / n if n else 0.0
+
+    def cuota_n(self, termino: str, periodo: str) -> float:
+        """Cuota corregida por la densidad léxica del periodo. Es la que deben
+        usar las lentes: comparar cuotas crudas entre periodos de distinta
+        longitud media atribuye a la actualidad lo que solo es extensión."""
+        return self.cuota(termino, periodo) / self.escala.get(periodo, 1.0)
+
+    def titulares_hasta(self, periodo: str) -> set[str]:
+        """Términos que ya habían sido titular en o antes de ese periodo."""
+        out: set[str] = set()
+        for p in self.periodos:
+            if p <= periodo:
+                out |= self.titulares.get(p, set())
+        return out
 
     def docs_de(self, candidatos: set[str]) -> dict[str, set[int]]:
         """Qué análisis contienen cada uno de estos términos. Se calcula solo
@@ -157,6 +185,73 @@ def especificidad(termino: str, df_total: dict[str, int]) -> int:
     return max((df_total.get(w, 0) for w in termino.split()), default=0)
 
 
+def factores_escala(df: dict[str, dict[str, int]], docs: dict[str, int],
+                    periodos: list[str], minimo_df: int = 40) -> dict[str, float]:
+    """Cuánto infla o desinfla cada periodo la cuota de un término cualquiera.
+
+    Mismo problema que el tamaño de librería en secuenciación, y misma
+    solución: se toman los términos frecuentes presentes en todos los
+    periodos, se divide su cuota en cada periodo por su media geométrica, y
+    se resume el periodo con la **mediana** de esos cocientes. La mediana
+    ignora a los pocos términos que de verdad cambiaron de importancia, así
+    que lo que queda es el efecto técnico: longitud media de los textos,
+    calidad de la extracción, cambios de estilo.
+
+    Un factor de 3 significa que ese periodo hace parecer tres veces más
+    presente a *todo* el vocabulario; sin corregirlo, cualquier lente
+    confundiría ese salto con un cambio de agenda.
+    """
+    from math import exp, log
+    if len(periodos) < 2:
+        return {p: 1.0 for p in periodos}
+
+    cocientes: dict[str, list[float]] = {p: [] for p in periodos}
+    for termino, por_periodo in df.items():
+        if sum(por_periodo.values()) < minimo_df:
+            continue
+        cuotas = [por_periodo.get(p, 0) / docs[p] if docs.get(p) else 0.0 for p in periodos]
+        if any(q <= 0 for q in cuotas):        # debe existir en todos, o no compara
+            continue
+        media_geom = exp(sum(log(q) for q in cuotas) / len(cuotas))
+        for p, q in zip(periodos, cuotas):
+            cocientes[p].append(q / media_geom)
+
+    def mediana(xs: list[float]) -> float:
+        if not xs:
+            return 1.0
+        xs = sorted(xs)
+        m = len(xs) // 2
+        return xs[m] if len(xs) % 2 else (xs[m - 1] + xs[m]) / 2
+
+    n_base = len(cocientes[periodos[0]])
+    if n_base < 200:            # muestra insuficiente: mejor no corregir nada
+        return {p: 1.0 for p in periodos}
+    return {p: max(mediana(v), 1e-6) for p, v in cocientes.items()}
+
+
+def cola_binomial(n: int, total: int, prob: float, superior: bool = True) -> float:
+    """Probabilidad de ver al menos (o como mucho) n análisis con el término,
+    si en realidad nada hubiera cambiado.
+
+    Sin esta prueba, con decenas de miles de términos examinados siempre habrá
+    unos cuantos que se desvíen mucho por puro azar, y la lente los presentaría
+    como hallazgos. Es el error que delató el corpus sintético al señalar
+    «delegacion bilateral», dos palabras de relleno juntas por casualidad.
+    """
+    from math import exp, lgamma, log
+    prob = min(max(prob, 1e-12), 1 - 1e-12)
+    if total <= 0:
+        return 1.0
+
+    def log_pmf(k: int) -> float:
+        return (lgamma(total + 1) - lgamma(k + 1) - lgamma(total - k + 1)
+                + k * log(prob) + (total - k) * log(1 - prob))
+
+    rango = range(n, total + 1) if superior else range(0, n + 1)
+    mayor = max(log_pmf(k) for k in rango)
+    return min(1.0, exp(mayor) * sum(exp(log_pmf(k) - mayor) for k in rango))
+
+
 def clave_periodo(f: date, escala: str) -> str:
     if escala == "semestre":
         return f"{f.year}-S{1 if f.month <= 6 else 2}"
@@ -190,10 +285,28 @@ def cargar_corpus(database_url: str, publicacion: str | None = None,
         )
         filas = cur.fetchall()
 
+        descartados = 0
+        if solo_completos:
+            cur.execute(
+                f"""SELECT count(*) AS n
+                    FROM articles a JOIN publications p ON p.id = a.publication_id
+                    WHERE {' AND '.join(x for x in filtros if x != 'a.is_full')}
+                      AND NOT a.is_full""",
+                params,
+            )
+            descartados = cur.fetchone()["n"]
+
+    return corpus_desde_filas(filas, escala, descartados)
+
+
+def corpus_desde_filas(filas, escala: str = "anio", descartados: int = 0) -> Corpus:
+    """Cuenta términos por periodo. Separada de la consulta para poder probar
+    el método con corpus sintéticos, sin base de datos."""
     analisis: list[Analisis] = []
     docs: Counter = Counter()
     totales: Counter = Counter()
     en_titulares: set[str] = set()
+    titulares: dict[str, set[str]] = defaultdict(set)
 
     for f in filas:
         per = clave_periodo(f["published_date"], escala)
@@ -204,22 +317,31 @@ def cargar_corpus(database_url: str, publicacion: str | None = None,
                                  terminos_titulo=tt, texto=texto))
         docs[per] += 1
         en_titulares |= tt
+        titulares[per] |= tt
         totales.update(terminos(texto))
 
     vivos = {t for t, n in totales.items() if n >= MIN_DF_GLOBAL}
     del totales
 
     df: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    suma_terminos: Counter = Counter()
     for a in analisis:
-        for t in terminos(a.texto) & vivos:
+        propios = terminos(a.texto)
+        suma_terminos[a.periodo] += len(propios)
+        for t in propios & vivos:
             df[t][a.periodo] += 1
 
     periodos = sorted(docs)
+    df = {t: dict(v) for t, v in df.items()}
     return Corpus(
         analisis=analisis, periodos=periodos, docs_por_periodo=dict(docs),
-        df={t: dict(v) for t, v in df.items()},
+        df=df,
         df_total={t: sum(v.values()) for t, v in df.items()},
         en_titulares=en_titulares,
+        titulares={p: set(v) for p, v in titulares.items()},
+        densidad={p: suma_terminos[p] / docs[p] for p in periodos},
+        escala=factores_escala(df, dict(docs), periodos),
+        descartados=descartados,
     )
 
 

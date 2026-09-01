@@ -37,8 +37,23 @@ def main(argv=None) -> int:
           f"· {time.time()-t0:.1f}s")
     if args.publicacion:
         print(f"Publicación: {args.publicacion}")
-    print(f"Análisis por periodo: " +
-          ", ".join(f"{p}:{c.docs_por_periodo[p]}" for p in c.periodos[-6:]))
+    if c.descartados:
+        print(f"Excluidos por no tener el texto completo: {c.descartados} "
+              f"análisis (no entran en ningún recuento)")
+
+    # Salud del corpus: sin esto no se puede distinguir un cambio de agenda de
+    # un cambio en la longitud o la calidad de extracción de los textos.
+    print("\nSALUD DEL CORPUS (lo que hay que mirar antes de creerse una tendencia)")
+    print(f"  {'periodo':10} {'análisis':>9} {'términos/análisis':>18} "
+          f"{'factor de escala':>17}")
+    for p in c.periodos[-8:]:
+        f = c.escala.get(p, 1.0)
+        aviso = "  ← desvía las cuotas" if f < 0.7 or f > 1.4 else ""
+        print(f"  {p:10} {c.docs_por_periodo[p]:9} {c.densidad.get(p, 0):18.0f} "
+              f"{f:17.2f}{aviso}")
+    print("  El factor resume cuánto infla ese periodo la cuota de cualquier "
+          "término.\n  Las lentes dividen por él; las cuotas mostradas son las "
+          "crudas.")
     print()
 
     if args.lente in ("cronista", "todas"):
